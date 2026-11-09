@@ -1342,7 +1342,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       ),
       body: bodyContent,
       bottomNavigationBar: SafeArea(
-        child: currentTab == 0 || currentTab == 1
+        child: currentTab == 0
             ? Container(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 decoration: const BoxDecoration(
