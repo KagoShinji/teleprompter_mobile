@@ -1262,15 +1262,33 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xfff7f7f5),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.camera, size: 24),
-            SizedBox(width: 8),
+            const Icon(Icons.camera, size: 24),
+            const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                'Teleprompt by rocs',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.bold),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text(
+                    'Teleprompt',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      height: 1.1,
+                    ),
+                  ),
+                  Text(
+                    'by rocs',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black54,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
