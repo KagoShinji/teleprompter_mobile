@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:cue_mobile/main.dart';
+import 'package:cue_mobile/studio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,8 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 
 class FakeCamera extends CameraPlatform {
   final errors = StreamController<CameraErrorEvent>.broadcast();
+  final orientations =
+      StreamController<DeviceOrientationChangedEvent>.broadcast();
   bool denyAccess = false;
   bool started = false;
   bool stopped = false;
@@ -36,7 +39,7 @@ class FakeCamera extends CameraPlatform {
 
   @override
   Stream<DeviceOrientationChangedEvent> onDeviceOrientationChanged() =>
-      const Stream.empty();
+      orientations.stream;
 
   @override
   Stream<CameraInitializedEvent> onCameraInitialized(int cameraId) =>
@@ -145,6 +148,7 @@ void main() {
     VideoPlayerPlatform.instance = previousVideo;
     camera.errors.add(const CameraErrorEvent(1, 'closed'));
     camera.errors.close();
+    camera.orientations.close();
     video.events.close();
   });
 
@@ -153,7 +157,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Enable camera'));
     await tester.pumpAndSettle();
-    expect(camera.lockedOrientation, DeviceOrientation.portraitUp);
+    expect(camera.lockedOrientation, isNull);
     expect(find.text('Start recording'), findsOneWidget);
 
     await tester.tap(find.text('Start recording'));
@@ -267,36 +271,51 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Fullscreen preview'));
         await tester.pump();
-        await tester.tap(find.text('Start recording'));
+        await tester.tap(find.byTooltip('Start recording'));
         await tester.pump(const Duration(seconds: 3));
         await tester.pump();
 
-        final previewScroll = find.ancestor(
-          of: find.text('READ ALONG'),
-          matching: find.byType(SingleChildScrollView),
-        );
         final status = find.textContaining('REC ');
         expect(status, findsOneWidget);
-        expect(previewScroll, findsOneWidget);
+        expect(find.text('READ ALONG'), findsOneWidget);
+        final promptView = find.byType(SingleChildScrollView);
+        expect(promptView, findsOneWidget);
         expect(
           tester.getRect(status).top,
-          greaterThanOrEqualTo(tester.getRect(previewScroll).bottom),
+          greaterThanOrEqualTo(tester.getRect(promptView).bottom),
         );
         expect(
           tester.getRect(status).bottom,
           lessThanOrEqualTo(tester.view.physicalSize.height),
         );
-        await tester.tap(find.byTooltip('Fullscreen settings'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(find.text('Reading speed'), findsOneWidget);
-        await tester.tap(find.byTooltip('Increase text size'));
+        await tester.tap(find.byTooltip('Teleprompter settings'));
+        await tester.pumpAndSettle();
+        expect(find.text('Your script'), findsOneWidget);
+        // In landscape the settings list is shorter than its content. Jump the
+        // list directly: a drag that starts on the script field scrolls the
+        // field instead of the list.
+        final settingsScroll = tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: find.byType(ListView),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first,
+            )
+            .position;
+        settingsScroll.jumpTo(settingsScroll.maxScrollExtent);
+        await tester.pumpAndSettle();
+        final sizeButton = find.byTooltip('Increase text size');
+        expect(sizeButton, findsOneWidget);
+        await tester.ensureVisible(sizeButton);
+        await tester.pumpAndSettle();
+        await tester.tap(sizeButton);
         await tester.pump();
         expect(find.text('26px'), findsOneWidget);
         await tester.binding.handlePopRoute();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-        await tester.tap(find.text('Finish take'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Stop recording'));
         await tester.pumpAndSettle();
         expect(status, findsNothing);
       },
@@ -418,18 +437,18 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Fullscreen preview'));
       await tester.pump();
-      await tester.tap(find.text('Start recording'));
+      await tester.tap(find.byTooltip('Start recording'));
       await tester.pump(const Duration(seconds: 3));
       await tester.pump();
-      await tester.tap(find.text('Finish take'));
+      await tester.tap(find.byTooltip('Stop recording'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Save to gallery'));
+      await tester.tap(find.byTooltip('Save to gallery'));
       await tester.pumpAndSettle();
       final error = find.textContaining('Gallery access was denied');
       expect(error, findsOneWidget);
       expect(tester.getRect(error).bottom, lessThanOrEqualTo(size.height));
       fail = false;
-      await tester.tap(find.text('Save to gallery'));
+      await tester.tap(find.byTooltip('Save to gallery'));
       await tester.pump();
       expect(find.text('Saving to gallery…'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -444,6 +463,84 @@ void main() {
       );
     });
   }
+
+  testWidgets('live camera preview keeps its own aspect ratio', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const CueApp());
+    await tester.pump();
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+
+    double previewAspect() {
+      final size = tester.getSize(find.byType(OrientedCameraPreview));
+      return size.width / size.height;
+    }
+
+    expect(find.byType(OrientedCameraPreview), findsOneWidget);
+    expect(previewAspect(), closeTo(720 / 1280, 0.001));
+
+    await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Fullscreen preview'));
+    await tester.pump();
+
+    // The preview is sized from the reported sensor aspect ratio; cropping to
+    // fill the screen must not stretch it.
+    expect(find.byType(OrientedCameraPreview), findsOneWidget);
+    expect(previewAspect(), closeTo(720 / 1280, 0.001));
+    final size = tester.getSize(find.byType(OrientedCameraPreview));
+    expect(size.width, lessThanOrEqualTo(400));
+    expect(size.height, lessThanOrEqualTo(800));
+  });
+
+  testWidgets('recording preview follows the live device orientation', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const CueApp());
+    await tester.pump();
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Fullscreen preview'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+
+    // The camera package freezes `recordingOrientation` when the take starts,
+    // while the native preview keeps rotating with the device. The app must
+    // keep following the live orientation so the preview never flips or
+    // stretches for the rest of the recording.
+    camera.orientations.add(
+      const DeviceOrientationChangedEvent(DeviceOrientation.landscapeLeft),
+    );
+    await tester.pumpAndSettle();
+
+    final preview = find.byType(OrientedCameraPreview);
+    expect(preview, findsOneWidget);
+    expect(
+      tester.getSize(preview).width / tester.getSize(preview).height,
+      closeTo(1280 / 720, 0.001),
+    );
+    final rotated = tester.widget<RotatedBox>(
+      find.descendant(of: preview, matching: find.byType(RotatedBox)),
+    );
+    expect(rotated.quarterTurns, 3);
+
+    await tester.tap(find.byTooltip('Stop recording'));
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('surfaces camera permission errors', (tester) async {
     camera.denyAccess = true;

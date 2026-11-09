@@ -70,38 +70,38 @@ void main() {
     );
   });
 
-  testWidgets('practice and fullscreen settings work without a camera', (
-    tester,
-  ) async {
+  testWidgets('fullscreen settings work without a camera', (tester) async {
     await tester.pumpWidget(const CueApp());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Practice without recording'));
-    await tester.pump();
-    expect(find.text('READ ALONG'), findsOneWidget);
     await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Fullscreen preview'));
     await tester.pump();
-    final initialPromptTop = tester.getTopLeft(find.text('READ ALONG')).dy;
-    await tester.tap(find.byTooltip('Fullscreen settings'));
+
+    expect(find.text('Your camera will appear here'), findsOneWidget);
+    expect(find.text('READ ALONG'), findsNothing);
+
+    await tester.tap(find.byTooltip('Teleprompter settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your script'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byTooltip('Increase text size'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Increase text size'));
     await tester.pump();
     expect(find.text('26px'), findsOneWidget);
-    expect(find.text('Prompt position'), findsOneWidget);
-    await tester.tapAt(
-      tester.getCenter(find.byType(Slider).last) + const Offset(100, 0),
-    );
-    await tester.pump();
+
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(
-      tester.getTopLeft(find.text('READ ALONG')).dy,
-      greaterThan(initialPromptTop),
-    );
-    await tester.tap(find.text('End practice'));
-    await tester.pump();
-    expect(find.text('Enable camera'), findsOneWidget);
+    expect(find.byTooltip('Teleprompter settings'), findsOneWidget);
   });
 
   testWidgets('supports fullscreen preview and portrait/landscape choice', (
@@ -124,10 +124,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Fullscreen preview'));
     await tester.pump();
-    expect(find.byTooltip('Exit fullscreen preview'), findsOneWidget);
-    expect(find.text('Enable camera'), findsOneWidget);
-    await tester.tap(find.byTooltip('Exit fullscreen preview'));
-    await tester.pump();
-    expect(find.text('Make it sound like you.'), findsOneWidget);
+    expect(find.byTooltip('Teleprompter settings'), findsOneWidget);
+    expect(find.text('Your camera will appear here'), findsOneWidget);
+    expect(find.text('Choose your workflow'), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Teleprompter settings'), findsNothing);
+    expect(find.text('Choose your workflow'), findsOneWidget);
   });
 }

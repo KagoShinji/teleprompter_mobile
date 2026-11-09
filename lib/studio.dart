@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
@@ -43,7 +44,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool scriptEdited = false;
   bool restoringScript = false;
   bool recording = false;
-  bool practicing = false;
   bool takeSaved = false;
   bool savingTake = false;
   bool playing = false;
@@ -58,7 +58,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool allowExit = false;
   bool showSubtitles = true;
   bool showFullscreenControls = true;
-  bool fullscreenTrayExpanded = true;
   int currentTab = 2;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
@@ -168,7 +167,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         state == AppLifecycleState.detached) {
       appPaused = true;
       if (countdown != null) _cancelCountdown();
-      if (practicing) _stopPractice();
       if (!busy) unawaited(_releaseCameraForBackground());
     } else if (state == AppLifecycleState.resumed) {
       appPaused = false;
@@ -214,6 +212,19 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  void _logCameraValue(String tag, CameraController controller) {
+    assert(() {
+      final val = controller.value;
+      debugPrint(
+        '[CameraLog][$tag] isInitialized: ${val.isInitialized}, '
+        'isRecordingVideo: ${val.isRecordingVideo}, '
+        'aspectRatio: ${val.aspectRatio}, '
+        'error: ${val.errorDescription}',
+      );
+      return true;
+    }());
+  }
+
   Future<void> _openCamera() async {
     if (busy) return;
     if (camera != null &&
@@ -245,11 +256,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         enableAudio: true,
       );
       await next.initialize();
-      await next.lockCaptureOrientation(
-        landscape
-            ? DeviceOrientation.landscapeLeft
-            : DeviceOrientation.portraitUp,
-      );
+      _logCameraValue('initialized', next);
       if (!mounted || appPaused) {
         await next.dispose();
         return;
@@ -267,9 +274,16 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     }
   }
 
+  void _openTeleprompter() {
+    setState(() {
+      currentTab = 0;
+      fullscreen = true;
+    });
+    unawaited(_openCamera());
+  }
+
   Future<void> _setOrientation(bool value) async {
     if (recording ||
-        practicing ||
         countdown != null ||
         take != null ||
         busy ||
@@ -285,9 +299,13 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     if (activeCamera == null) return;
     setState(() => busy = true);
     try {
-      await activeCamera.lockCaptureOrientation(
-        value ? DeviceOrientation.landscapeLeft : DeviceOrientation.portraitUp,
-      );
+      if (value) {
+        await activeCamera.lockCaptureOrientation(
+          DeviceOrientation.landscapeLeft,
+        );
+      } else {
+        await activeCamera.unlockCaptureOrientation();
+      }
     } on CameraException catch (error) {
       _notify(
         'Could not change capture orientation: ${error.description ?? error.code}',
@@ -299,7 +317,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   }
 
   void _beginCountdown() {
-    if (camera == null || busy || practicing || countdown != null) return;
+    if (camera == null || busy || countdown != null) return;
     setState(() {
       countdown = 3;
       message = null;
@@ -342,27 +360,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     });
   }
 
-  void _startPractice() {
-    if (busy || recording || countdown != null || take != null) return;
-    if (promptScroll.hasClients) promptScroll.jumpTo(0);
-    setState(() {
-      practicing = true;
-      playing = true;
-      message = null;
-    });
-    _startTicker();
-  }
-
-  void _stopPractice() {
-    ticker?.cancel();
-    if (mounted) {
-      setState(() {
-        practicing = false;
-        playing = false;
-      });
-    }
-  }
-
   Future<void> _startRecording() async {
     final activeCamera = camera;
     if (activeCamera == null ||
@@ -376,7 +373,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       message = null;
     });
     try {
+      _logCameraValue('before-start', activeCamera);
       await activeCamera.startVideoRecording();
+      _logCameraValue('after-start', activeCamera);
       if (!mounted) return;
       recordingStart = DateTime.now();
       transcriber = SpeechTranscriber();
@@ -405,6 +404,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     ticker?.cancel();
     try {
       final captured = await activeCamera.stopVideoRecording();
+      _logCameraValue('after-stop', activeCamera);
       final spoken = await transcriber?.stop() ?? <SubtitleWord>[];
       transcriber = null;
       take = captured;
@@ -482,7 +482,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
 
   Future<void> _handleBack() async {
     if (fullscreen) {
-      setState(() => fullscreen = false);
+      setState(() {
+        fullscreen = false;
+        currentTab = 2;
+      });
       return;
     }
     if (busy) {
@@ -583,14 +586,259 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   void _changeSize(int amount) =>
       setState(() => fontSize = (fontSize + amount).clamp(16, 36));
 
-  Widget _recordingStatus() => Chip(
-    backgroundColor: Colors.black54,
-    label: Text(
-      'REC ${formatTime(elapsed)}',
-      style: const TextStyle(color: Colors.white),
+  Widget _recordingStatus() => IgnorePointer(
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.circle, size: 10, color: Color(0xfff06b62)),
+        const SizedBox(width: 7),
+        Text(
+          'REC ${formatTime(elapsed)}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            shadows: [Shadow(color: Colors.black87, blurRadius: 6)],
+          ),
+        ),
+      ],
     ),
-    avatar: const Icon(Icons.circle, size: 10, color: Color(0xfff06b62)),
   );
+
+  Widget? _fullscreenStatusBanner() {
+    final String text;
+    Widget? leading;
+    if (savingTake) {
+      text = 'Saving to gallery…';
+      leading = const SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+      );
+    } else if (saveError != null) {
+      text = saveError!;
+      leading = const Icon(Icons.error_outline, color: Colors.white, size: 16);
+    } else if (message != null) {
+      text = message!;
+    } else if (takeSaved) {
+      text = 'Saved to gallery';
+      leading = const Icon(
+        Icons.check_circle_outline,
+        color: Colors.white,
+        size: 16,
+      );
+    } else {
+      return null;
+    }
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 104,
+      child: SafeArea(
+        top: false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xcc101310),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (leading != null) ...[leading, const SizedBox(width: 8)],
+                Expanded(
+                  child: Text(
+                    text,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roundCameraButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    Color background = const Color(0x66000000),
+    Color foreground = Colors.white,
+  }) => Semantics(
+    button: true,
+    label: tooltip,
+    child: Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkResponse(
+          onTap: onPressed,
+          radius: 28,
+          containedInkWell: true,
+          customBorder: const CircleBorder(),
+          child: Ink(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: background,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: foreground),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _recordControl({
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool stop = false,
+  }) => Semantics(
+    button: true,
+    label: tooltip,
+    child: Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkResponse(
+          onTap: onPressed,
+          radius: 44,
+          containedInkWell: true,
+          customBorder: const CircleBorder(),
+          child: Ink(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white70, width: 3),
+            ),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: stop ? 28 : 58,
+                height: stop ? 28 : 58,
+                decoration: BoxDecoration(
+                  color: const Color(0xffe74c4c),
+                  borderRadius: BorderRadius.circular(stop ? 7 : 40),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _cameraControls() {
+    if (countdown != null) {
+      return SizedBox(
+        height: 88,
+        child: Center(
+          child: _roundCameraButton(
+            tooltip: 'Cancel recording countdown',
+            icon: Icons.close,
+            onPressed: _cancelCountdown,
+          ),
+        ),
+      );
+    }
+
+    if (take != null) {
+      final activePlayer = player;
+      return SizedBox(
+        height: 88,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _roundCameraButton(
+              tooltip: takeSaved ? 'Saved to gallery' : 'Save to gallery',
+              icon: takeSaved ? Icons.check : Icons.save_alt,
+              onPressed: busy || takeSaved ? null : _saveToGallery,
+              background: takeSaved
+                  ? const Color(0xff3d8054)
+                  : const Color(0x66000000),
+            ),
+            if (activePlayer != null && activePlayer.value.isInitialized)
+              ValueListenableBuilder<VideoPlayerValue>(
+                valueListenable: activePlayer,
+                builder: (context, value, _) => _roundCameraButton(
+                  tooltip: value.isPlaying
+                      ? 'Pause recording'
+                      : 'Play recording',
+                  icon: value.isPlaying ? Icons.pause : Icons.play_arrow,
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (value.isPlaying) {
+                            await activePlayer.pause();
+                          } else {
+                            if (value.position >= value.duration) {
+                              await activePlayer.seekTo(Duration.zero);
+                            }
+                            await activePlayer.play();
+                          }
+                        },
+                ),
+              ),
+            _roundCameraButton(
+              tooltip: 'Retake video',
+              icon: Icons.replay,
+              onPressed: busy ? null : _retake,
+            ),
+            _roundCameraButton(
+              tooltip: 'Share video',
+              icon: Icons.share_outlined,
+              onPressed: busy ? null : () => _share(context),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (recording) {
+      return SizedBox(
+        height: 88,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _roundCameraButton(
+              tooltip: playing ? 'Pause prompt' : 'Resume prompt',
+              icon: playing ? Icons.pause : Icons.play_arrow,
+              onPressed: busy ? null : () => setState(() => playing = !playing),
+            ),
+            const SizedBox(width: 32),
+            _recordControl(
+              tooltip: 'Stop recording',
+              onPressed: busy ? null : _stopRecording,
+              stop: true,
+            ),
+            const SizedBox(width: 80),
+          ],
+        ),
+      );
+    }
+
+    final needsCamera = camera == null || camera!.value.hasError;
+    return SizedBox(
+      height: 88,
+      child: Center(
+        child: _recordControl(
+          tooltip: needsCamera ? 'Enable camera' : 'Start recording',
+          onPressed: busy
+              ? null
+              : (needsCamera ? _openCamera : _beginCountdown),
+        ),
+      ),
+    );
+  }
 
   Widget _actionButtons() {
     if (countdown != null) {
@@ -598,27 +846,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         onPressed: _cancelCountdown,
         icon: const Icon(Icons.close),
         label: Text('Starting in $countdown • Cancel'),
-      );
-    }
-    if (practicing) {
-      return Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => setState(() => playing = !playing),
-              icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-              label: Text(playing ? 'Pause prompt' : 'Resume prompt'),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: _stopPractice,
-              icon: const Icon(Icons.stop),
-              label: const Text('End practice'),
-            ),
-          ),
-        ],
       );
     }
     if (recording) {
@@ -822,16 +1049,82 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 : 'Start recording',
           ),
         ),
-        OutlinedButton.icon(
-          onPressed: busy ? null : _startPractice,
-          icon: const Icon(Icons.menu_book),
-          label: const Text('Practice without recording'),
-        ),
       ],
     );
   }
 
-  Widget _preview() {
+  /// Covers the available space with [child] by scaling it uniformly around
+  /// its centre and clipping the overflow.
+  ///
+  /// [child] is never resized, so widgets that manage their own aspect ratio
+  /// (such as the camera preview) cannot be distorted.
+  Widget _coverCrop({required double aspect, required Widget child}) {
+    if (!aspect.isFinite || aspect <= 0) return child;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+          return child;
+        }
+        final viewportAspect = constraints.maxWidth / constraints.maxHeight;
+        if (!viewportAspect.isFinite || viewportAspect <= 0) return child;
+        final scale = aspect > viewportAspect
+            ? aspect / viewportAspect
+            : viewportAspect / aspect;
+        return ClipRect(
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _cameraLayer(CameraController controller) {
+    // Leave the sizing to [OrientedCameraPreview] so the camera keeps its own
+    // orientation-aware aspect ratio; only scale the finished preview to
+    // crop-to-fill.
+    return ValueListenableBuilder<CameraValue>(
+      valueListenable: controller,
+      builder: (context, value, _) => _coverCrop(
+        aspect: _cameraAspectFor(value),
+        child: Center(
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.diagonal3Values(mirror ? -1 : 1, 1, 1),
+            child: OrientedCameraPreview(controller),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _takeLayer(VideoPlayerController controller) {
+    return _coverCrop(
+      aspect: controller.value.aspectRatio,
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: controller.value.aspectRatio,
+          child: GestureDetector(
+            onTap: () async {
+              if (controller.value.isPlaying) {
+                await controller.pause();
+              } else {
+                if (controller.value.position >= controller.value.duration) {
+                  await controller.seekTo(Duration.zero);
+                }
+                await controller.play();
+              }
+            },
+            child: VideoPlayer(controller),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _preview({bool cover = false}) {
     final currentCamera = camera;
     final currentPlayer = player;
     final isLive =
@@ -844,214 +1137,196 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
             currentPlayer.value.isInitialized
         ? currentPlayer.value.aspectRatio
         : isLive
-        ? (landscape
-              ? currentCamera.value.aspectRatio
-              : 1 / currentCamera.value.aspectRatio)
+        ? _cameraAspectFor(currentCamera.value)
         : (landscape ? 16 / 9 : 9 / 16);
+    final preview = ClipRRect(
+      borderRadius: BorderRadius.circular(fullscreen ? 0 : 16),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const ColoredBox(color: Color(0xff171a17)),
+          if (isLive)
+            _cameraLayer(currentCamera)
+          else if (take != null &&
+              currentPlayer != null &&
+              currentPlayer.value.isInitialized)
+            _takeLayer(currentPlayer)
+          else if (take == null)
+            const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.videocam_outlined,
+                    color: Colors.white70,
+                    size: 40,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Your camera will appear here',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'A good light and a quiet space go a long way.',
+                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          if (isLive)
+            Align(
+              alignment: Alignment(0, promptPosition),
+              child: FractionallySizedBox(
+                heightFactor: 0.31,
+                widthFactor: 1,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xf00e110f),
+                        Color(0xd80e110f),
+                        Color(0xb00e110f),
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'READ ALONG',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: promptScroll,
+                          child: Text(
+                            script.text.isEmpty
+                                ? 'Add your script to see it here.'
+                                : script.text,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: fontSize,
+                              height: 1.42,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (take != null &&
+              currentPlayer != null &&
+              currentPlayer.value.isInitialized &&
+              showSubtitles &&
+              subtitleWords != null &&
+              subtitleWords!.isNotEmpty)
+            InteractiveSubtitleOverlay(
+              words: subtitleWords!,
+              player: currentPlayer,
+              style: subtitleStyle,
+              onWordEdited: (word, newText) {
+                setState(() => word.text = newText);
+              },
+            ),
+          if (take != null &&
+              currentPlayer != null &&
+              currentPlayer.value.isInitialized)
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: currentPlayer,
+              builder: (context, value, _) {
+                if (value.isPlaying) return const SizedBox.shrink();
+                return Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          if (take != null &&
+              currentPlayer != null &&
+              currentPlayer.value.isInitialized)
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: ValueListenableBuilder<VideoPlayerValue>(
+                valueListenable: currentPlayer,
+                builder: (context, value, _) => Row(
+                  children: [
+                    IconButton.filled(
+                      tooltip: value.isPlaying ? 'Pause video' : 'Play video',
+                      onPressed: () async {
+                        if (value.isPlaying) {
+                          await currentPlayer.pause();
+                        } else {
+                          if (value.position >= value.duration) {
+                            await currentPlayer.seekTo(Duration.zero);
+                          }
+                          await currentPlayer.play();
+                        }
+                      },
+                      icon: Icon(
+                        value.isPlaying ? Icons.pause : Icons.play_arrow,
+                      ),
+                    ),
+                    Expanded(
+                      child: VideoProgressIndicator(
+                        currentPlayer,
+                        allowScrubbing: true,
+                        padding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                    Text(
+                      '${formatTime(value.position.inSeconds)} / ${formatTime(value.duration.inSeconds)}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (cover) {
+      // The live camera has already been cropped to fill the viewport, so the
+      // overlay stack can span the whole screen.
+      return preview;
+    }
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: fullscreen || landscape ? double.infinity : 420,
         ),
-        child: AspectRatio(
-          aspectRatio: aspect,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(fullscreen ? 0 : 16),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                const ColoredBox(color: Color(0xff171a17)),
-                if (isLive)
-                  Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.diagonal3Values(mirror ? -1 : 1, 1, 1),
-                    child: CameraPreview(currentCamera),
-                  )
-                else if (take != null &&
-                    currentPlayer != null &&
-                    currentPlayer.value.isInitialized)
-                  GestureDetector(
-                    onTap: () async {
-                      if (currentPlayer.value.isPlaying) {
-                        await currentPlayer.pause();
-                      } else {
-                        if (currentPlayer.value.position >=
-                            currentPlayer.value.duration) {
-                          await currentPlayer.seekTo(Duration.zero);
-                        }
-                        await currentPlayer.play();
-                      }
-                    },
-                    child: VideoPlayer(currentPlayer),
-                  )
-                else if (take == null && !practicing)
-                  const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.videocam_outlined,
-                          color: Colors.white70,
-                          size: 40,
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          'Your camera will appear here',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'A good light and a quiet space go a long way.',
-                          style: TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (isLive || practicing)
-                  Align(
-                    alignment: Alignment(0, promptPosition),
-                    child: FractionallySizedBox(
-                      heightFactor: 0.31,
-                      widthFactor: 1,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xf00e110f),
-                              Color(0xd80e110f),
-                              Color(0xb00e110f),
-                            ],
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'READ ALONG',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Expanded(
-                              child: SingleChildScrollView(
-                                controller: promptScroll,
-                                child: Text(
-                                  script.text.isEmpty
-                                      ? 'Add your script to see it here.'
-                                      : script.text,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: fontSize,
-                                    height: 1.42,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                if (take != null &&
-                    currentPlayer != null &&
-                    currentPlayer.value.isInitialized &&
-                    showSubtitles &&
-                    subtitleWords != null &&
-                    subtitleWords!.isNotEmpty)
-                  InteractiveSubtitleOverlay(
-                    words: subtitleWords!,
-                    player: currentPlayer,
-                    style: subtitleStyle,
-                    onWordEdited: (word, newText) {
-                      setState(() => word.text = newText);
-                    },
-                  ),
-                if (take != null &&
-                    currentPlayer != null &&
-                    currentPlayer.value.isInitialized)
-                  ValueListenableBuilder<VideoPlayerValue>(
-                    valueListenable: currentPlayer,
-                    builder: (context, value, _) {
-                      if (value.isPlaying) return const SizedBox.shrink();
-                      return Center(
-                        child: IgnorePointer(
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow,
-                              color: Colors.white,
-                              size: 40,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                if (take != null &&
-                    currentPlayer != null &&
-                    currentPlayer.value.isInitialized)
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    child: ValueListenableBuilder<VideoPlayerValue>(
-                      valueListenable: currentPlayer,
-                      builder: (context, value, _) => Row(
-                        children: [
-                          IconButton.filled(
-                            tooltip: value.isPlaying
-                                ? 'Pause video'
-                                : 'Play video',
-                            onPressed: () async {
-                              if (value.isPlaying) {
-                                await currentPlayer.pause();
-                              } else {
-                                if (value.position >= value.duration) {
-                                  await currentPlayer.seekTo(Duration.zero);
-                                }
-                                await currentPlayer.play();
-                              }
-                            },
-                            icon: Icon(
-                              value.isPlaying ? Icons.pause : Icons.play_arrow,
-                            ),
-                          ),
-                          Expanded(
-                            child: VideoProgressIndicator(
-                              currentPlayer,
-                              allowScrubbing: true,
-                              padding: const EdgeInsets.all(12),
-                            ),
-                          ),
-                          Text(
-                            '${formatTime(value.position.inSeconds)} / ${formatTime(value.duration.inSeconds)}',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
+        child: AspectRatio(aspectRatio: aspect, child: preview),
       ),
     );
   }
@@ -1146,26 +1421,82 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     ],
   );
 
-  void _showFullscreenSettings() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
+  Future<void> _showTeleprompterSettings() async {
+    if (countdown != null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => StatefulBuilder(
+          builder: (context, refresh) => Scaffold(
+            appBar: AppBar(title: const Text('Teleprompter settings')),
+            body: ListView(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Studio settings',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+              children: [
+                const Text(
+                  'Your script',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: script,
+                  minLines: 5,
+                  maxLines: 12,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Paste or type your script here',
                   ),
-                  _settingsControls(refresh: () => setSheetState(() {})),
-                ],
-              ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _paste,
+                        icon: const Icon(Icons.content_paste, size: 16),
+                        label: const Text('Paste'),
+                      ),
+                      TextButton.icon(
+                        onPressed: script.clear,
+                        icon: const Icon(Icons.delete_outline, size: 16),
+                        label: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Capture orientation',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Portrait'),
+                      selected: !landscape,
+                      onSelected:
+                          recording || countdown != null || take != null || busy
+                          ? null
+                          : (_) => _setOrientation(false),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Landscape'),
+                      selected: landscape,
+                      onSelected:
+                          recording || countdown != null || take != null || busy
+                          ? null
+                          : (_) => _setOrientation(true),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _settingsControls(refresh: () => refresh(() {})),
+                const SizedBox(height: 12),
+                const Text(
+                  'The script appears in your preview while you read. Saved recordings contain the camera and microphone, without the script overlay.',
+                  style: TextStyle(color: Colors.black54, fontSize: 13),
+                ),
+              ],
             ),
           ),
         ),
@@ -1219,115 +1550,66 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     if (fullscreen) {
       return Scaffold(
         backgroundColor: const Color(0xff121512),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: _preview(),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(child: _preview(cover: true)),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: Row(
+                    children: [
+                      const Spacer(),
+                      if (take != null &&
+                          subtitleWords != null &&
+                          subtitleWords!.isNotEmpty) ...[
+                        _roundCameraButton(
+                          tooltip: showSubtitles
+                              ? 'Hide captions'
+                              : 'Show captions',
+                          icon: showSubtitles
+                              ? Icons.closed_caption
+                              : Icons.closed_caption_off,
+                          onPressed: () =>
+                              setState(() => showSubtitles = !showSubtitles),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      _roundCameraButton(
+                        tooltip: 'Teleprompter settings',
+                        icon: Icons.settings_outlined,
+                        onPressed: countdown == null
+                            ? _showTeleprompterSettings
+                            : null,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 2,
-                ),
-                child: Row(
-                  children: [
-                    if (recording) _recordingStatus(),
-                    if (practicing)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xff1b281e),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Text(
-                          'Practice',
-                          style: TextStyle(
-                            color: Color(0xff9ed5a9),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: fullscreenTrayExpanded
-                          ? 'Collapse controls tray'
-                          : 'Expand controls tray',
-                      color: Colors.white,
-                      onPressed: () => setState(
-                        () => fullscreenTrayExpanded = !fullscreenTrayExpanded,
-                      ),
-                      icon: Icon(
-                        fullscreenTrayExpanded
-                            ? Icons.keyboard_arrow_down
-                            : Icons.keyboard_arrow_up,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Fullscreen settings',
-                      color: Colors.white,
-                      onPressed: countdown == null
-                          ? _showFullscreenSettings
-                          : null,
-                      icon: const Icon(Icons.tune),
-                    ),
-                    IconButton(
-                      tooltip: 'Exit fullscreen preview',
-                      color: Colors.white,
-                      onPressed: () => setState(() => fullscreen = false),
-                      icon: const Icon(Icons.fullscreen_exit),
-                    ),
-                  ],
+            ),
+            ?_fullscreenStatusBanner(),
+            if (recording)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 126,
+                child: SafeArea(
+                  top: false,
+                  child: Center(child: _recordingStatus()),
                 ),
               ),
-              if (message != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 2,
-                  ),
-                  child: Text(
-                    message!,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ),
-              AnimatedCrossFade(
-                firstChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                  child: Theme(
-                    data: Theme.of(context).copyWith(
-                      outlinedButtonTheme: OutlinedButtonThemeData(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white38),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      filledButtonTheme: FilledButtonThemeData(
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ),
-                    child: _actionButtons(),
-                  ),
-                ),
-                secondChild: const SizedBox.shrink(),
-                crossFadeState: fullscreenTrayExpanded
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                duration: const Duration(milliseconds: 250),
-              ),
-            ],
-          ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(top: false, child: _cameraControls()),
+            ),
+          ],
         ),
       );
     }
@@ -1388,7 +1670,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         actions: [
           IconButton(
             tooltip: 'Feature Hub',
-            onPressed: () => setState(() => currentTab = 2),
+            onPressed: () => setState(() {
+              fullscreen = false;
+              currentTab = 2;
+            }),
             icon: const Icon(Icons.grid_view_outlined),
           ),
           IconButton(
@@ -1434,7 +1719,14 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   height: 62,
                   selectedIndex: currentTab,
                   onDestinationSelected: (index) {
-                    setState(() => currentTab = index);
+                    if (index == 0) {
+                      _openTeleprompter();
+                    } else {
+                      setState(() {
+                        fullscreen = false;
+                        currentTab = index;
+                      });
+                    }
                   },
                   destinations: const [
                     NavigationDestination(
@@ -1524,7 +1816,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           badgeText: 'Active',
           badgeColor: const Color(0xffd8eedc),
           badgeTextColor: const Color(0xff1b4d24),
-          onTap: () => setState(() => currentTab = 0),
+          onTap: _openTeleprompter,
         ),
         const SizedBox(height: 10),
         _featureSelectionCard(
@@ -2069,11 +2361,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       label: const Text('Portrait'),
                       selected: !landscape,
                       onSelected:
-                          recording ||
-                              practicing ||
-                              countdown != null ||
-                              take != null ||
-                              busy
+                          recording || countdown != null || take != null || busy
                           ? null
                           : (_) => _setOrientation(false),
                     ),
@@ -2081,11 +2369,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       label: const Text('Landscape'),
                       selected: landscape,
                       onSelected:
-                          recording ||
-                              practicing ||
-                              countdown != null ||
-                              take != null ||
-                              busy
+                          recording || countdown != null || take != null || busy
                           ? null
                           : (_) => _setOrientation(true),
                     ),
@@ -2181,6 +2465,62 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           style: TextStyle(color: Colors.black54, fontSize: 11),
         ),
       ],
+    );
+  }
+}
+
+/// The device orientation used to lay out the live camera preview.
+///
+/// This deliberately ignores [CameraValue.recordingOrientation]. The camera
+/// package's own `CameraPreview` switches to that value while recording, but it
+/// is frozen when the take starts while the platform preview keeps rotating
+/// with the live device orientation. When the two disagree the preview stays
+/// rotated, flipped or stretched for the whole recording.
+DeviceOrientation _previewOrientation(CameraValue value) =>
+    value.previewPauseOrientation ?? value.deviceOrientation;
+
+/// The aspect ratio the live preview should be laid out with, taking the
+/// current device orientation into account.
+double _cameraAspectFor(CameraValue value) {
+  final orientation = _previewOrientation(value);
+  final isLandscape =
+      orientation == DeviceOrientation.landscapeLeft ||
+      orientation == DeviceOrientation.landscapeRight;
+  return isLandscape ? value.aspectRatio : 1 / value.aspectRatio;
+}
+
+/// A live camera preview that keeps its own aspect ratio and follows the live
+/// device orientation, including while a recording is in progress.
+class OrientedCameraPreview extends StatelessWidget {
+  const OrientedCameraPreview(this.controller, {super.key});
+
+  final CameraController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<CameraValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final orientation = _previewOrientation(value);
+        Widget preview = controller.buildPreview();
+        // Mirror the rotation the camera package applies on Android, but drive
+        // it from the live orientation instead of the frozen recording one.
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          preview = RotatedBox(
+            quarterTurns: switch (orientation) {
+              DeviceOrientation.portraitUp => 0,
+              DeviceOrientation.landscapeRight => 1,
+              DeviceOrientation.portraitDown => 2,
+              DeviceOrientation.landscapeLeft => 3,
+            },
+            child: preview,
+          );
+        }
+        return AspectRatio(
+          aspectRatio: _cameraAspectFor(value),
+          child: Stack(fit: StackFit.expand, children: [preview]),
+        );
+      },
     );
   }
 }
