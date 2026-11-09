@@ -56,6 +56,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool settingsVisible = true;
   bool allowExit = false;
   bool showSubtitles = true;
+  int currentTab = 0;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
   int elapsed = 0;
@@ -1259,6 +1260,23 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     final words = script.text.trim().isEmpty
         ? 0
         : script.text.trim().split(RegExp(r'\s+')).length;
+    Widget bodyContent;
+    switch (currentTab) {
+      case 1:
+        bodyContent = _buildCaptionsHubView();
+        break;
+      case 2:
+        bodyContent = _buildFeatureHubView();
+        break;
+      case 3:
+        bodyContent = _buildComingSoonView();
+        break;
+      case 0:
+      default:
+        bodyContent = _buildTeleprompterView(words);
+        break;
+    }
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xfff7f7f5),
@@ -1295,6 +1313,11 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         ),
         actions: [
           IconButton(
+            tooltip: 'Feature Hub',
+            onPressed: () => setState(() => currentTab = 2),
+            icon: const Icon(Icons.grid_view_outlined),
+          ),
+          IconButton(
             tooltip: 'Help',
             onPressed: countdown != null
                 ? null
@@ -1317,353 +1340,783 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          Card(
-            elevation: 0,
-            color: const Color(0xffecede8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'YOUR RECORDING SPACE',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xff5f6b55),
-                            letterSpacing: 1.1,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Make it sound like you.',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xff1f241d),
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Your script, your pace, your best take.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ],
-                    ),
+      body: bodyContent,
+      bottomNavigationBar: SafeArea(
+        child: currentTab == 0 || currentTab == 1
+            ? Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Color(0xffe8e9e5))),
+                ),
+                child: _actionButtons(),
+              )
+            : NavigationBar(
+                selectedIndex: currentTab,
+                onDestinationSelected: (index) {
+                  setState(() => currentTab = index);
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.videocam_outlined),
+                    selectedIcon: Icon(Icons.videocam),
+                    label: 'Teleprompter',
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: camera != null && camera!.value.isInitialized
-                          ? const Color(0xffd8eedc)
-                          : const Color(0xffe1e3db),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.circle,
-                          size: 8,
-                          color: camera != null && camera!.value.isInitialized
-                              ? const Color(0xff2d7a3a)
-                              : Colors.black45,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          camera != null && camera!.value.isInitialized
-                              ? 'Camera On'
-                              : 'Camera Ready',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: camera != null && camera!.value.isInitialized
-                                ? const Color(0xff1b4d24)
-                                : Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
+                  NavigationDestination(
+                    icon: Icon(Icons.closed_caption_outlined),
+                    selectedIcon: Icon(Icons.closed_caption),
+                    label: 'Captions',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.grid_view_outlined),
+                    selectedIcon: Icon(Icons.grid_view),
+                    label: 'Feature Hub',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.auto_awesome_outlined),
+                    selectedIcon: Icon(Icons.auto_awesome),
+                    label: 'Soon',
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureHubView() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Card(
+          elevation: 0,
+          color: const Color(0xffecede8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'STUDIO FEATURE HUB',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff5f6b55),
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Choose your workflow',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff1f241d),
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Select a tool to create, edit, or enhance your videos.',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Color(0xffe2e4dd)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '01  Your script',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() => editing = !editing),
-                        child: Text(editing ? 'Done editing' : 'Edit script'),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'Prompt is for preview only; saved video is clean  •  $words words',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 6),
-                  if (editing) ...[
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'AVAILABLE TOOLS',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'Teleprompter Studio',
+          description:
+              'Record video with scrolling script, camera preview, mirror mode & custom speeds.',
+          icon: Icons.camera_front,
+          badgeText: 'Active',
+          badgeColor: const Color(0xffd8eedc),
+          badgeTextColor: const Color(0xff1b4d24),
+          onTap: () => setState(() => currentTab = 0),
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'Auto Captions & Subtitles',
+          description:
+              'Interactive bouncy animated subtitles synced to voice, with drag positioning & text editing.',
+          icon: Icons.closed_caption,
+          badgeText: 'Active',
+          badgeColor: const Color(0xffd8eedc),
+          badgeTextColor: const Color(0xff1b4d24),
+          onTap: () => setState(() => currentTab = 1),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'COMING SOON',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'AI Script Writer',
+          description:
+              'Generate engaging video scripts from topic ideas using AI prompts.',
+          icon: Icons.auto_awesome,
+          badgeText: 'Soon',
+          badgeColor: const Color(0xffeaeaea),
+          badgeTextColor: Colors.black54,
+          onTap: () => setState(() => currentTab = 3),
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'AI Background & Lighting',
+          description:
+              'Real-time background blur, lighting enhancement, and color grading.',
+          icon: Icons.color_lens_outlined,
+          badgeText: 'Soon',
+          badgeColor: const Color(0xffeaeaea),
+          badgeTextColor: Colors.black54,
+          onTap: () => setState(() => currentTab = 3),
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'Voice Noise Cleaner',
+          description:
+              'Remove ambient background noise and enhance speech audio clarity.',
+          icon: Icons.graphic_eq,
+          badgeText: 'Soon',
+          badgeColor: const Color(0xffeaeaea),
+          badgeTextColor: Colors.black54,
+          onTap: () => setState(() => currentTab = 3),
+        ),
+      ],
+    );
+  }
+
+  Widget _featureSelectionCard({
+    required String title,
+    required String description,
+    required IconData icon,
+    required String badgeText,
+    required Color badgeColor,
+    required Color badgeTextColor,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xffe2e4dd)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xfff0f2eb),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: const Color(0xff242620), size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
                           ),
-                          onPressed: _paste,
-                          icon: const Icon(Icons.content_paste, size: 16),
-                          label: const Text('Paste'),
                         ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Clear script',
-                          onPressed: script.clear,
-                          icon: const Icon(Icons.delete_outline, size: 20),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: badgeTextColor,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    TextField(
-                      controller: script,
-                      minLines: 3,
-                      maxLines: 10,
-                      style: const TextStyle(fontSize: 14, height: 1.4),
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: const Color(0xfff7f8f5),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xffdcded7)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xffdcded7)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xff4a5444)),
-                        ),
-                        hintText: 'Paste or type your script here',
-                        labelText: 'Teleprompter script',
-                      ),
-                    ),
-                  ] else ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xfff7f8f5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xffe6e8e1)),
-                      ),
-                      child: Text(
-                        script.text.isEmpty
-                            ? 'No script added yet. Tap "Edit script" to add yours.'
-                            : script.text,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.4,
-                          color: script.text.isEmpty
-                              ? Colors.black45
-                              : Colors.black87,
-                        ),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                        height: 1.35,
                       ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '02  Camera preview',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Fullscreen preview',
-                        onPressed: () => setState(() => fullscreen = true),
-                        icon: const Icon(Icons.fullscreen),
-                      ),
-                    ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCaptionsHubView() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Card(
+          elevation: 0,
+          color: const Color(0xffecede8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'AUTO CAPTIONS & SUBTITLES',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff5f6b55),
+                    letterSpacing: 1.1,
                   ),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 4,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Portrait'),
-                        selected: !landscape,
-                        onSelected:
-                            recording ||
-                                practicing ||
-                                countdown != null ||
-                                take != null ||
-                                busy
-                            ? null
-                            : (_) => _setOrientation(false),
-                      ),
-                      ChoiceChip(
-                        label: const Text('Landscape'),
-                        selected: landscape,
-                        onSelected:
-                            recording ||
-                                practicing ||
-                                countdown != null ||
-                                take != null ||
-                                busy
-                            ? null
-                            : (_) => _setOrientation(true),
-                      ),
-                    ],
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Interactive Bouncy Subtitles',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff1f241d),
                   ),
-                  const SizedBox(height: 10),
-                  _preview(),
-                  if (message != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Drag subtitles anywhere on screen, tap any word to edit, or toggle custom styles.',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xffe2e4dd)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
                       child: Text(
-                        message!,
-                        style: const TextStyle(
-                          color: Color(0xff98514b),
-                          fontSize: 12,
+                        'Video & Subtitle Preview',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
                         ),
                       ),
                     ),
-                  const SizedBox(height: 8),
-                  if (recording)
-                    _recordingStatus()
-                  else
-                    Text(
-                      '${formatTime(elapsed)}${take != null ? '  •  Take ready' : ''}',
+                    IconButton(
+                      tooltip: 'Fullscreen preview',
+                      onPressed: () => setState(() => fullscreen = true),
+                      icon: const Icon(Icons.fullscreen),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _preview(),
+                if (take == null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfff7f8f5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: Colors.black54,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Record a take in Teleprompter Studio to generate word-synced subtitles for your video.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComingSoonView() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Card(
+          elevation: 0,
+          color: const Color(0xffecede8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'UPCOMING FEATURES',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff5f6b55),
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Roadmap & Studio Innovations',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff1f241d),
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'New tools currently in development for your studio workspace.',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _featureSelectionCard(
+          title: 'AI Script Generator',
+          description:
+              'Type a topic or outline and let AI generate structured, ready-to-read teleprompter scripts.',
+          icon: Icons.auto_awesome,
+          badgeText: 'In Progress',
+          badgeColor: const Color(0xfffff4ce),
+          badgeTextColor: const Color(0xff7a5900),
+          onTap: () {},
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'Teleprompter Remote Control',
+          description:
+              'Control reading speed, play, pause, and script scrolling using a secondary phone or bluetooth remote.',
+          icon: Icons.settings_remote,
+          badgeText: 'Planned',
+          badgeColor: const Color(0xffeaeaea),
+          badgeTextColor: Colors.black54,
+          onTap: () {},
+        ),
+        const SizedBox(height: 10),
+        _featureSelectionCard(
+          title: 'Auto Clip Trimmer',
+          description:
+              'Automatically trim silent pauses at the beginning and end of your video recordings.',
+          icon: Icons.content_cut,
+          badgeText: 'Planned',
+          badgeColor: const Color(0xffeaeaea),
+          badgeTextColor: Colors.black54,
+          onTap: () {},
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTeleprompterView(int words) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        Card(
+          elevation: 0,
+          color: const Color(0xffecede8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'YOUR RECORDING SPACE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff5f6b55),
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Make it sound like you.',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff1f241d),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Your script, your pace, your best take.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: camera != null && camera!.value.isInitialized
+                        ? const Color(0xffd8eedc)
+                        : const Color(0xffe1e3db),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 8,
+                        color: camera != null && camera!.value.isInitialized
+                            ? const Color(0xff2d7a3a)
+                            : Colors.black45,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        camera != null && camera!.value.isInitialized
+                            ? 'Camera On'
+                            : 'Camera Ready',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: camera != null && camera!.value.isInitialized
+                              ? const Color(0xff1b4d24)
+                              : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xffe2e4dd)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '01  Your script',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => editing = !editing),
+                      child: Text(editing ? 'Done editing' : 'Edit script'),
+                    ),
+                  ],
+                ),
+                Text(
+                  'Prompt is for preview only; saved video is clean  •  $words words',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                const SizedBox(height: 6),
+                if (editing) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: _paste,
+                        icon: const Icon(Icons.content_paste, size: 16),
+                        label: const Text('Paste'),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Clear script',
+                        onPressed: script.clear,
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: script,
+                    minLines: 3,
+                    maxLines: 10,
+                    style: const TextStyle(fontSize: 14, height: 1.4),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xfff7f8f5),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xffdcded7)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xffdcded7)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xff4a5444)),
+                      ),
+                      hintText: 'Paste or type your script here',
+                      labelText: 'Teleprompter script',
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfff7f8f5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xffe6e8e1)),
+                    ),
+                    child: Text(
+                      script.text.isEmpty
+                          ? 'No script added yet. Tap "Edit script" to add yours.'
+                          : script.text,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: script.text.isEmpty
+                            ? Colors.black45
+                            : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '02  Camera preview',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Fullscreen preview',
+                      onPressed: () => setState(() => fullscreen = true),
+                      icon: const Icon(Icons.fullscreen),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Portrait'),
+                      selected: !landscape,
+                      onSelected:
+                          recording ||
+                              practicing ||
+                              countdown != null ||
+                              take != null ||
+                              busy
+                          ? null
+                          : (_) => _setOrientation(false),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Landscape'),
+                      selected: landscape,
+                      onSelected:
+                          recording ||
+                              practicing ||
+                              countdown != null ||
+                              take != null ||
+                              busy
+                          ? null
+                          : (_) => _setOrientation(true),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _preview(),
+                if (message != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      message!,
                       style: const TextStyle(
-                        color: Colors.black54,
+                        color: Color(0xff98514b),
                         fontSize: 12,
                       ),
                     ),
-                ],
-              ),
+                  ),
+                const SizedBox(height: 8),
+                if (recording)
+                  _recordingStatus()
+                else
+                  Text(
+                    '${formatTime(elapsed)}${take != null ? '  •  Take ready' : ''}',
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Color(0xffe2e4dd)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Studio settings',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xffe2e4dd)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Studio settings',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
                         ),
                       ),
-                      IconButton(
-                        tooltip: settingsVisible
-                            ? 'Hide settings'
-                            : 'Show settings',
-                        onPressed: () =>
-                            setState(() => settingsVisible = !settingsVisible),
-                        icon: const Icon(Icons.tune),
-                      ),
-                    ],
-                  ),
-                  if (settingsVisible) ...[
-                    _settingsControls(),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'The scrolling prompt is only on your preview. Your saved video contains the camera and microphone, without script text.',
-                      style: TextStyle(color: Colors.black54, fontSize: 12),
                     ),
-                  ] else
-                    const Text(
-                      'Settings are hidden.',
-                      style: TextStyle(color: Colors.black45, fontSize: 12),
+                    IconButton(
+                      tooltip: settingsVisible
+                          ? 'Hide settings'
+                          : 'Show settings',
+                      onPressed: () =>
+                          setState(() => settingsVisible = !settingsVisible),
+                      icon: const Icon(Icons.tune),
                     ),
-                  const SizedBox(height: 12),
+                  ],
+                ),
+                if (settingsVisible) ...[
+                  _settingsControls(),
+                  const SizedBox(height: 6),
                   const Text(
-                    'A little reminder',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    "Keep your script close to the camera lens for a more natural look. You've got this.",
+                    'The scrolling prompt is only on your preview. Your saved video contains the camera and microphone, without script text.',
                     style: TextStyle(color: Colors.black54, fontSize: 12),
                   ),
-                ],
-              ),
+                ] else
+                  const Text(
+                    'Settings are hidden.',
+                    style: TextStyle(color: Colors.black45, fontSize: 12),
+                  ),
+                const SizedBox(height: 12),
+                const Text(
+                  'A little reminder',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  "Keep your script close to the camera lens for a more natural look. You've got this.",
+                  style: TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Recordings stay on your device',
-            style: TextStyle(color: Colors.black54, fontSize: 11),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xffe8e9e5))),
-          ),
-          child: _actionButtons(),
         ),
-      ),
+        const SizedBox(height: 12),
+        const Text(
+          'Recordings stay on your device',
+          style: TextStyle(color: Colors.black54, fontSize: 11),
+        ),
+      ],
     );
   }
 }
