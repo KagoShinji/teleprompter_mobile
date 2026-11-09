@@ -14,7 +14,7 @@ class CueApp extends StatelessWidget {
   Widget build(BuildContext context) {
     const ink = Color(0xff242620);
     return MaterialApp(
-      title: 'Cue',
+      title: 'Teleprompt by rocs',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

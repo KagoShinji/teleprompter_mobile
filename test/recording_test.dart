@@ -192,8 +192,10 @@ void main() {
     await tester.tap(find.text('Start recording'));
     await tester.pump();
     expect(find.text('Starting in 3 • Cancel'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Starting in 2 • Cancel'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
     expect(camera.started, isFalse);
     await tester.tap(find.text('Starting in 2 • Cancel'));
     await tester.pump(const Duration(seconds: 3));
@@ -212,8 +214,15 @@ void main() {
     await tester.tap(find.text('Enable camera'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start recording'));
-    await tester.pump(const Duration(seconds: 3));
     await tester.pump();
+    expect(find.text('3'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('2'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('1'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.text('1'), findsNothing);
     await tester.tap(find.text('Finish take'));
     await tester.pumpAndSettle();
     await tester.binding.handlePopRoute();
@@ -322,17 +331,18 @@ void main() {
     expect(
       tester
           .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Save to gallery'),
+            find.widgetWithText(FilledButton, 'Saving to gallery…'),
           )
           .onPressed,
       isNull,
     );
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(calls.map((call) => call.method), ['requestAccess', 'putVideo']);
     expect(calls.last.arguments['path'], 'test-recording.mp4');
     save.complete();
     await tester.pumpAndSettle();
     expect(find.text('Saved to gallery'), findsOneWidget);
-    expect(find.text('Video saved to your gallery or Photos.'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     await tester.tap(find.text('Retake'));
     await tester.pumpAndSettle();
     expect(find.text('Start recording'), findsOneWidget);
@@ -364,12 +374,76 @@ void main() {
     await tester.tap(find.text('Save to gallery'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Gallery access was denied'), findsOneWidget);
+    expect(
+      tester.getRect(find.textContaining('Gallery access was denied')).bottom,
+      lessThanOrEqualTo(
+        tester.view.physicalSize.height / tester.view.devicePixelRatio,
+      ),
+    );
     expect(find.text('Save to gallery'), findsOneWidget);
     denied = false;
     await tester.tap(find.text('Save to gallery'));
     await tester.pumpAndSettle();
     expect(find.text('Saved to gallery'), findsOneWidget);
   });
+
+  for (final size in [const Size(400, 800), const Size(800, 400)]) {
+    testWidgets('fullscreen save feedback fits ${size.width}x${size.height}', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final save = Completer<void>();
+      var fail = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('gal'), (call) async {
+            if (call.method == 'requestAccess') return true;
+            if (call.method == 'putVideo') {
+              if (fail) throw PlatformException(code: 'ACCESS_DENIED');
+              await save.future;
+            }
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(const MethodChannel('gal'), null);
+      });
+
+      await tester.pumpWidget(const CueApp());
+      await tester.tap(find.text('Enable camera'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Fullscreen preview'));
+      await tester.pump();
+      await tester.tap(find.text('Start recording'));
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      await tester.tap(find.text('Finish take'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save to gallery'));
+      await tester.pumpAndSettle();
+      final error = find.textContaining('Gallery access was denied');
+      expect(error, findsOneWidget);
+      expect(tester.getRect(error).bottom, lessThanOrEqualTo(size.height));
+      fail = false;
+      await tester.tap(find.text('Save to gallery'));
+      await tester.pump();
+      expect(find.text('Saving to gallery…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.textContaining('Gallery access was denied'), findsNothing);
+      save.complete();
+      await tester.pumpAndSettle();
+      final confirmation = find.text('Saved to gallery');
+      expect(confirmation, findsOneWidget);
+      expect(
+        tester.getRect(confirmation).bottom,
+        lessThanOrEqualTo(size.height),
+      );
+    });
+  }
 
   testWidgets('surfaces camera permission errors', (tester) async {
     camera.denyAccess = true;

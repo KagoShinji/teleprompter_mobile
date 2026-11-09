@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />
     <application
-        android:label="Cue"
+        android:label="Teleprompt by rocs"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

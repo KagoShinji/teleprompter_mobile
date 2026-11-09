@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
 import 'firebase_support.dart';
+import 'subtitles.dart';
 
 const initialScript =
     "Hi there, and welcome.\n\nToday, I want to share a few thoughts on making your next big idea happen. It starts with a simple question: what would you make if you knew you couldn't fail?\n\nGive yourself the space to explore, to experiment, and to get it a little wrong. That's where the interesting things begin.\n\nSo take that first step. Your next chapter is waiting.";
@@ -43,6 +44,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool recording = false;
   bool practicing = false;
   bool takeSaved = false;
+  bool savingTake = false;
   bool playing = false;
   bool busy = false;
   bool mirror = false;
@@ -53,12 +55,16 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool releasingCamera = false;
   bool settingsVisible = true;
   bool allowExit = false;
+  bool showSubtitles = true;
+  SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
+  List<SubtitleWord>? subtitleWords;
   int elapsed = 0;
   int? countdown;
   double fontSize = 24;
   double speed = 1;
   double promptPosition = -1;
   String? message;
+  String? saveError;
 
   @override
   void initState() {
@@ -201,6 +207,11 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
 
   Future<void> _openCamera() async {
     if (busy) return;
+    if (camera != null &&
+        camera!.value.isInitialized &&
+        !camera!.value.hasError) {
+      return;
+    }
     setState(() {
       busy = true;
       message = null;
@@ -236,6 +247,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       }
       camera = next;
       next.addListener(_cameraChanged);
+      unawaited((await preferences).setBool('camera_auto_open', true));
     } on CameraException catch (error) {
       await next?.dispose();
       _notify(
@@ -384,7 +396,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       final captured = await activeCamera.stopVideoRecording();
       take = captured;
       takeSaved = false;
+      saveError = null;
       recording = false;
+      final totalDuration = elapsed > 0 ? elapsed.toDouble() : 10.0;
+      subtitleWords = generateSubtitlesFromScript(script.text, totalDuration);
       _notify('Take ready. Save it to your gallery before closing the app.');
       final nextPlayer = VideoPlayerController.file(File(take!.path));
       player = nextPlayer;
@@ -435,6 +450,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       player = null;
       take = null;
       takeSaved = false;
+      saveError = null;
+      subtitleWords = null;
       elapsed = 0;
       message = null;
     });
@@ -466,22 +483,31 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     if (current == null || busy || takeSaved) return;
     setState(() {
       busy = true;
+      savingTake = true;
+      saveError = null;
       message = null;
     });
     try {
       await Gal.putVideo(current.path);
       if (mounted) {
         setState(() => takeSaved = true);
-        _notify('Video saved to your gallery or Photos.');
       }
     } on GalException catch (error) {
       final detail = error.type == GalExceptionType.accessDenied
           ? 'Gallery access was denied. Allow access in device settings and try again.'
           : error.type.message;
-      _notify('Could not save the video: $detail');
+      if (mounted) {
+        setState(() => saveError = 'Could not save the video: $detail');
+      }
     } on MissingPluginException {
-      _notify('Could not save the video. Restart the app and try again.');
+      if (mounted) {
+        setState(
+          () => saveError =
+              'Could not save the video. Restart the app and try again.',
+        );
+      }
     } finally {
+      if (mounted) setState(() => savingTake = false);
       _finishOperation();
     }
   }
@@ -498,7 +524,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       final result = await SharePlus.instance.share(
         ShareParams(
           files: [current],
-          title: 'Cue recording',
+          title: 'Teleprompt by rocs recording',
           sharePositionOrigin: origin,
         ),
       );
@@ -598,15 +624,143 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       );
     }
     if (take != null) {
+      final activePlayer = player;
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
-            onPressed: busy || takeSaved ? null : _saveToGallery,
-            icon: Icon(takeSaved ? Icons.check : Icons.save_alt),
-            label: Text(takeSaved ? 'Saved to gallery' : 'Save to gallery'),
-          ),
+          if (activePlayer != null && activePlayer.value.isInitialized)
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: activePlayer,
+              builder: (context, value, _) {
+                final isPlaying = value.isPlaying;
+                return OutlinedButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (isPlaying) {
+                            await activePlayer.pause();
+                          } else {
+                            if (value.position >= value.duration) {
+                              await activePlayer.seekTo(Duration.zero);
+                            }
+                            await activePlayer.play();
+                          }
+                        },
+                  icon: Icon(
+                    isPlaying ? Icons.pause_circle : Icons.play_circle,
+                  ),
+                  label: Text(
+                    isPlaying ? 'Pause recording' : 'Play recording',
+                  ),
+                );
+              },
+            ),
+          if (activePlayer != null && activePlayer.value.isInitialized)
+            const SizedBox(height: 8),
+          if (subtitleWords != null && subtitleWords!.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        setState(() => showSubtitles = !showSubtitles),
+                    icon: Icon(
+                      showSubtitles
+                          ? Icons.closed_caption
+                          : Icons.closed_caption_off,
+                    ),
+                    label: Text(
+                      showSubtitles ? 'Hide subtitles' : 'Show subtitles',
+                    ),
+                  ),
+                ),
+                if (showSubtitles) ...[
+                  const SizedBox(width: 8),
+                  PopupMenuButton<SubtitlePresetStyle>(
+                    tooltip: 'Subtitle style',
+                    icon: const Icon(Icons.palette_outlined),
+                    onSelected: (style) =>
+                        setState(() => subtitleStyle = style),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: SubtitlePresetStyle.bouncyYellow,
+                        child: Text('Bouncy Yellow'),
+                      ),
+                      PopupMenuItem(
+                        value: SubtitlePresetStyle.neonCyan,
+                        child: Text('Neon Cyan'),
+                      ),
+                      PopupMenuItem(
+                        value: SubtitlePresetStyle.minimalDark,
+                        child: Text('Minimal White'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (takeSaved)
+            Semantics(
+              liveRegion: true,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    color: fullscreen
+                        ? const Color(0xff9ed5a9)
+                        : const Color(0xff3d8054),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Saved to gallery',
+                    style: TextStyle(
+                      color: fullscreen
+                          ? const Color(0xff9ed5a9)
+                          : const Color(0xff3d8054),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                disabledForegroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xff555d50),
+              ),
+              onPressed: busy ? null : _saveToGallery,
+              icon: savingTake
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save_alt),
+              label: Text(
+                savingTake ? 'Saving to gallery…' : 'Save to gallery',
+              ),
+            ),
+          if (saveError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  saveError!,
+                  style: TextStyle(
+                    color: fullscreen ? Colors.white : const Color(0xff98514b),
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -704,7 +858,20 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 else if (take != null &&
                     currentPlayer != null &&
                     currentPlayer.value.isInitialized)
-                  VideoPlayer(currentPlayer)
+                  GestureDetector(
+                    onTap: () async {
+                      if (currentPlayer.value.isPlaying) {
+                        await currentPlayer.pause();
+                      } else {
+                        if (currentPlayer.value.position >=
+                            currentPlayer.value.duration) {
+                          await currentPlayer.seekTo(Duration.zero);
+                        }
+                        await currentPlayer.play();
+                      }
+                    },
+                    child: VideoPlayer(currentPlayer),
+                  )
                 else if (take == null && !practicing)
                   const Center(
                     child: Column(
@@ -782,6 +949,46 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   ),
                 if (take != null &&
                     currentPlayer != null &&
+                    currentPlayer.value.isInitialized &&
+                    showSubtitles &&
+                    subtitleWords != null &&
+                    subtitleWords!.isNotEmpty)
+                  InteractiveSubtitleOverlay(
+                    words: subtitleWords!,
+                    player: currentPlayer,
+                    style: subtitleStyle,
+                    onWordEdited: (word, newText) {
+                      setState(() => word.text = newText);
+                    },
+                  ),
+                if (take != null &&
+                    currentPlayer != null &&
+                    currentPlayer.value.isInitialized)
+                  ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: currentPlayer,
+                    builder: (context, value, _) {
+                      if (value.isPlaying) return const SizedBox.shrink();
+                      return Center(
+                        child: IgnorePointer(
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.play_arrow,
+                              color: Colors.white,
+                              size: 40,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                if (take != null &&
+                    currentPlayer != null &&
                     currentPlayer.value.isInitialized)
                   Positioned(
                     left: 8,
@@ -816,6 +1023,15 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                               padding: const EdgeInsets.all(12),
                             ),
                           ),
+                          Text(
+                            '${formatTime(value.position.inSeconds)} / ${formatTime(value.duration.inSeconds)}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                         ],
                       ),
                     ),
@@ -951,13 +1167,46 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     onPopInvokedWithResult: (didPop, _) {
       if (!didPop) unawaited(_handleBack());
     },
-    child: _buildScreen(context),
+    child: Stack(
+      children: [
+        _buildScreen(context),
+        if (countdown != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Center(
+                child: Semantics(
+                  liveRegion: true,
+                  label: 'Recording starts in $countdown',
+                  child: Container(
+                    width: 112,
+                    height: 112,
+                    decoration: const BoxDecoration(
+                      color: Colors.black87,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$countdown',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 64,
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
   );
 
   Widget _buildScreen(BuildContext context) {
     if (fullscreen) {
       return Scaffold(
-        backgroundColor: const Color(0xff171a17),
+        backgroundColor: const Color(0xff121512),
         body: SafeArea(
           child: Column(
             children: [
@@ -977,7 +1226,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   IconButton(
                     tooltip: 'Fullscreen settings',
                     color: Colors.white,
-                    onPressed: _showFullscreenSettings,
+                    onPressed: countdown == null
+                        ? _showFullscreenSettings
+                        : null,
                     icon: const Icon(Icons.tune),
                   ),
                   IconButton(
@@ -1015,27 +1266,35 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           children: [
             Icon(Icons.camera, size: 24),
             SizedBox(width: 8),
-            Text('cue.', style: TextStyle(fontWeight: FontWeight.bold)),
+            Flexible(
+              child: Text(
+                'Teleprompt by rocs',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
         actions: [
           IconButton(
             tooltip: 'Help',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Your recording stays on your device'),
-                content: const Text(
-                  'The prompt appears only in the preview. Your video contains camera and microphone audio, without script text. Save it to your gallery or share a copy.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('OK'),
+            onPressed: countdown != null
+                ? null
+                : () => showDialog<void>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Your recording stays on your device'),
+                      content: const Text(
+                        'The prompt appears only in the preview. Your video contains camera and microphone audio, without script text. Save it to your gallery or share a copy.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
             icon: const Icon(Icons.help_outline),
           ),
         ],
@@ -1043,28 +1302,99 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          const Text(
-            'YOUR RECORDING SPACE',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Color(0xff78836e),
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Make it sound like you.',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
-          ),
-          const Text(
-            'Your script, your pace, your best take.',
-            style: TextStyle(color: Colors.black54),
-          ),
-          const SizedBox(height: 20),
           Card(
+            elevation: 0,
+            color: const Color(0xffecede8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'YOUR RECORDING SPACE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff5f6b55),
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Make it sound like you.',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff1f241d),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Your script, your pace, your best take.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: camera != null && camera!.value.isInitialized
+                          ? const Color(0xffd8eedc)
+                          : const Color(0xffe1e3db),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          size: 8,
+                          color: camera != null && camera!.value.isInitialized
+                              ? const Color(0xff2d7a3a)
+                              : Colors.black45,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          camera != null && camera!.value.isInitialized
+                              ? 'Camera On'
+                              : 'Camera Ready',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: camera != null && camera!.value.isInitialized
+                                ? const Color(0xff1b4d24)
+                                : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xffe2e4dd)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1073,7 +1403,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       const Expanded(
                         child: Text(
                           '01  Your script',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
                         ),
                       ),
                       TextButton(
@@ -1084,42 +1417,89 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   ),
                   Text(
                     'Prompt is for preview only; saved video is clean  •  $words words',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
                   ),
+                  const SizedBox(height: 6),
                   if (editing) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton.icon(
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
                           onPressed: _paste,
-                          icon: const Icon(Icons.content_paste),
+                          icon: const Icon(Icons.content_paste, size: 16),
                           label: const Text('Paste'),
                         ),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
                           tooltip: 'Clear script',
                           onPressed: script.clear,
-                          icon: const Icon(Icons.delete_outline),
+                          icon: const Icon(Icons.delete_outline, size: 20),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
                     TextField(
                       controller: script,
-                      minLines: 4,
-                      maxLines: 12,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
+                      minLines: 3,
+                      maxLines: 10,
+                      style: const TextStyle(fontSize: 14, height: 1.4),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xfff7f8f5),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xffdcded7)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xffdcded7)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xff4a5444)),
+                        ),
                         hintText: 'Paste or type your script here',
                         labelText: 'Teleprompter script',
                       ),
                     ),
+                  ] else ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xfff7f8f5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xffe6e8e1)),
+                      ),
+                      child: Text(
+                        script.text.isEmpty
+                            ? 'No script added yet. Tap "Edit script" to add yours.'
+                            : script.text,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: script.text.isEmpty
+                              ? Colors.black45
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
                   ],
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       const Expanded(
                         child: Text(
                           '02  Camera preview',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -1159,7 +1539,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   _preview(),
                   if (message != null)
                     Padding(
@@ -1178,7 +1558,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   else
                     Text(
                       '${formatTime(elapsed)}${take != null ? '  •  Take ready' : ''}',
-                      style: const TextStyle(color: Colors.black54),
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 12,
+                      ),
                     ),
                 ],
               ),
@@ -1186,8 +1569,13 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 12),
           Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xffe2e4dd)),
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1196,7 +1584,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       const Expanded(
                         child: Text(
                           'Studio settings',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -1211,17 +1602,25 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                   ),
                   if (settingsVisible) ...[
                     _settingsControls(),
+                    const SizedBox(height: 6),
                     const Text(
                       'The scrolling prompt is only on your preview. Your saved video contains the camera and microphone, without script text.',
                       style: TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ] else
-                    const Text('Settings are hidden.'),
-                  const SizedBox(height: 16),
+                    const Text(
+                      'Settings are hidden.',
+                      style: TextStyle(color: Colors.black45, fontSize: 12),
+                    ),
+                  const SizedBox(height: 12),
                   const Text(
                     'A little reminder',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
+                  const SizedBox(height: 2),
                   const Text(
                     "Keep your script close to the camera lens for a more natural look. You've got this.",
                     style: TextStyle(color: Colors.black54, fontSize: 12),

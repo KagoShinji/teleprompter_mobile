@@ -7,13 +7,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Cue</string>
+	<string>Teleprompt by rocs</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Cue uses your camera to preview and record your video.</string>
+	<string>Teleprompt by rocs uses your camera to preview and record your video.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cue uses your microphone to record audio with your video.</string>
+	<string>Teleprompt by rocs uses your microphone to record audio with your video.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Cue saves your recorded videos to your photo library when you choose to save them.</string>
+	<string>Teleprompt by rocs saves your recorded videos to your photo library when you choose to save them.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

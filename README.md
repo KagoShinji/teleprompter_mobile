@@ -24,7 +24,7 @@ devices; simulator camera support varies.
 ## Recording
 
 Enable the camera and microphone, edit or paste a script, select portrait or
-landscape capture, and start recording. A three-second countdown can be
+landscape capture, and start recording. A visible three-second countdown can be
 cancelled before recording begins. Use **Practice without recording** to
 rehearse the scrolling script, even without enabling the camera. The script is
 saved locally as you edit it. Use Studio settings, including the settings button
@@ -32,7 +32,8 @@ in fullscreen, to adjust speed, text size, prompt position, and preview mirror.
 The prompt scrolls over the live preview only; it is not burned into the
 recording. Pause or resume the prompt without
 pausing video, finish the take, and preview it. Use **Save to gallery** to save
-a copy to Android Gallery or iOS Photos, or **Share video** to export it
+a copy to Android Gallery or iOS Photos. The button shows saving progress and
+confirms success or displays an error to retry. Use **Share video** to export it
 through the native share sheet. Mirror changes the preview only.
 
 Finished takes are temporary until saved or shared, are not uploaded, and are
