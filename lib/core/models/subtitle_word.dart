@@ -5,11 +5,7 @@ class SubtitleWord {
   double start;
   double end;
 
-  SubtitleWord({
-    required this.text,
-    required this.start,
-    required this.end,
-  });
+  SubtitleWord({required this.text, required this.start, required this.end});
 }
 
 enum SubtitlePresetStyle { bouncyYellow, neonCyan, minimalDark }
@@ -34,10 +30,7 @@ List<SubtitleWord> generateSubtitlesFromScript(
     final word = words[i];
     final wordWeight = word.length / totalChars;
     final wordDuration = math.max(0.2, totalDurationSeconds * wordWeight);
-    final wordEnd = math.min(
-      totalDurationSeconds,
-      currentStart + wordDuration,
-    );
+    final wordEnd = math.min(totalDurationSeconds, currentStart + wordDuration);
 
     result.add(
       SubtitleWord(

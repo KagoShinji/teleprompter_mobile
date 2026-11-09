@@ -477,6 +477,8 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pump();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    // Speech recognition gets a moment to deliver its final words.
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
     expect(camera.stopped, isTrue);
     expect(camera.disposed, isTrue);

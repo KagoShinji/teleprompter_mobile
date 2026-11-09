@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -25,6 +26,8 @@ class InteractiveSubtitleOverlay extends StatefulWidget {
 
 class _InteractiveSubtitleOverlayState
     extends State<InteractiveSubtitleOverlay> {
+  static const _hideAfterSilence = 1.5;
+
   Offset offset = const Offset(0.0, 0.5);
 
   void _showEditDialog(SubtitleWord word) {
@@ -78,85 +81,106 @@ class _InteractiveSubtitleOverlayState
             });
           }
         },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0x99000000),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white24),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black38,
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: ValueListenableBuilder<VideoPlayerValue>(
             valueListenable: widget.player,
             builder: (context, value, _) {
               final currentSec = value.position.inMilliseconds / 1000.0;
-              final activeIndex = widget.words.indexWhere(
-                (w) => currentSec >= w.start && currentSec <= w.end,
+              final activeIndex = widget.words.lastIndexWhere(
+                (w) => currentSec >= w.start,
               );
+              // Nothing is spoken yet, or the speaker has paused for a while.
+              if (activeIndex < 0 ||
+                  currentSec >
+                      widget.words[activeIndex].end + _hideAfterSilence) {
+                return const SizedBox.shrink();
+              }
 
-              final visibleIndex = activeIndex >= 0 ? activeIndex : 0;
-              final chunkStart = (visibleIndex ~/ 4) * 4;
+              final chunkStart = (activeIndex ~/ 4) * 4;
               final chunkEnd = math.min(chunkStart + 4, widget.words.length);
               final visibleChunk = widget.words.sublist(chunkStart, chunkEnd);
+              final highlight = switch (widget.style) {
+                SubtitlePresetStyle.bouncyYellow => const Color(0xffffe500),
+                SubtitlePresetStyle.neonCyan => const Color(0xff00f5d4),
+                SubtitlePresetStyle.minimalDark => Colors.white,
+              };
 
               return Wrap(
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 6,
-                runSpacing: 6,
-                children: visibleChunk.map((word) {
-                  final isActive =
-                      currentSec >= word.start && currentSec <= word.end;
-
-                  return GestureDetector(
-                    onTap: () => _showEditDialog(word),
-                    child: AnimatedScale(
-                      scale: isActive ? 1.25 : 1.0,
-                      duration: const Duration(milliseconds: 140),
-                      curve: Curves.elasticOut,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? switch (widget.style) {
-                                  SubtitlePresetStyle.bouncyYellow =>
-                                    const Color(0xffffe500),
-                                  SubtitlePresetStyle.neonCyan =>
-                                    const Color(0xff00f5d4),
-                                  SubtitlePresetStyle.minimalDark =>
-                                    Colors.white,
-                                }
-                              : Colors.black38,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          word.text,
-                          style: TextStyle(
-                            color: isActive ? Colors.black : Colors.white70,
-                            fontWeight: isActive
-                                ? FontWeight.w900
-                                : FontWeight.w600,
-                            fontSize: isActive ? 17 : 15,
-                          ),
-                        ),
-                      ),
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (var i = 0; i < visibleChunk.length; i++)
+                    _SubtitleText(
+                      text: visibleChunk[i].text,
+                      active: chunkStart + i == activeIndex,
+                      color: highlight,
+                      onTap: () => _showEditDialog(visibleChunk[i]),
                     ),
-                  );
-                }).toList(),
+                ],
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A subtitle word drawn directly over the video: white fill with a dark
+/// outline and soft shadow instead of a background box.
+class _SubtitleText extends StatelessWidget {
+  final String text;
+  final bool active;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _SubtitleText({
+    required this.text,
+    required this.active,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 22,
+      fontWeight: FontWeight.w900,
+      height: 1.2,
+    );
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedScale(
+        scale: active ? 1.2 : 1.0,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.elasticOut,
+        child: Stack(
+          children: [
+            Text(
+              text,
+              style: style.copyWith(
+                foreground: Paint()
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = 4
+                  ..strokeJoin = StrokeJoin.round
+                  ..color = Colors.black,
+                shadows: const [
+                  Shadow(
+                    color: Colors.black54,
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              text,
+              style: style.copyWith(color: active ? color : Colors.white),
+            ),
+          ],
         ),
       ),
     );
