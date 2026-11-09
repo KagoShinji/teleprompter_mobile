@@ -2,8 +2,11 @@ import 'package:cue_mobile/main.dart';
 import 'package:cue_mobile/studio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   test('formats recording time', () {
     expect(formatTime(0), '00:00');
     expect(formatTime(65), '01:05');
@@ -27,10 +30,78 @@ void main() {
     await tester.tap(find.byTooltip('Clear script'));
     await tester.pump();
     expect(find.textContaining('0 words'), findsOneWidget);
-    await tester.ensureVisible(find.byTooltip('Increase text size').first);
+    await tester.scrollUntilVisible(
+      find.byTooltip('Increase text size'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Increase text size').first);
     await tester.pump();
     expect(find.text('26px'), findsWidgets);
+  });
+
+  testWidgets('restores edited and empty scripts', (tester) async {
+    await tester.pumpWidget(const CueApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit script'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'Saved script');
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(const CueApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit script'));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'Saved script',
+    );
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(const CueApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit script'));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '',
+    );
+  });
+
+  testWidgets('practice and fullscreen settings work without a camera', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const CueApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Practice without recording'));
+    await tester.pump();
+    expect(find.text('READ ALONG'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Fullscreen preview'));
+    await tester.pump();
+    final initialPromptTop = tester.getTopLeft(find.text('READ ALONG')).dy;
+    await tester.tap(find.byTooltip('Fullscreen settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Increase text size'));
+    await tester.pump();
+    expect(find.text('26px'), findsOneWidget);
+    expect(find.text('Prompt position'), findsOneWidget);
+    await tester.tapAt(
+      tester.getCenter(find.byType(Slider).last) + const Offset(100, 0),
+    );
+    await tester.pump();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('READ ALONG')).dy,
+      greaterThan(initialPromptTop),
+    );
+    await tester.tap(find.text('End practice'));
+    await tester.pump();
+    expect(find.text('Enable camera'), findsOneWidget);
   });
 
   testWidgets('supports fullscreen preview and portrait/landscape choice', (
@@ -48,6 +119,9 @@ void main() {
       isTrue,
     );
     await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 100));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Fullscreen preview'));
     await tester.pump();
     expect(find.byTooltip('Exit fullscreen preview'), findsOneWidget);

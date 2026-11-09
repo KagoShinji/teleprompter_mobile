@@ -5,6 +5,7 @@ import 'package:cue_mobile/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 class FakeCamera extends CameraPlatform {
@@ -130,6 +131,7 @@ void main() {
   late VideoPlayerPlatform previousVideo;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     previousCamera = CameraPlatform.instance;
     previousVideo = VideoPlayerPlatform.instance;
     camera = FakeCamera();
@@ -155,6 +157,7 @@ void main() {
     expect(find.text('Start recording'), findsOneWidget);
 
     await tester.tap(find.text('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
     await tester.pump();
     expect(camera.started, isTrue);
     expect(find.text('Pause prompt'), findsOneWidget);
@@ -165,10 +168,207 @@ void main() {
     await tester.pumpAndSettle();
     expect(camera.stopped, isTrue);
     expect(find.text('Share video'), findsOneWidget);
+    expect(find.text('Save to gallery'), findsOneWidget);
     expect(find.text('Retake'), findsOneWidget);
     await tester.tap(find.text('Retake'));
     await tester.pumpAndSettle();
+    expect(find.text('Discard this take?'), findsOneWidget);
+    await tester.tap(find.text('Keep take'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save to gallery'), findsOneWidget);
+    await tester.tap(find.text('Retake'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard'));
+    await tester.pumpAndSettle();
     expect(find.text('Start recording'), findsOneWidget);
+  });
+
+  testWidgets('countdown can be cancelled and stops on background', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const CueApp());
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start recording'));
+    await tester.pump();
+    expect(find.text('Starting in 3 • Cancel'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Starting in 2 • Cancel'), findsOneWidget);
+    expect(camera.started, isFalse);
+    await tester.tap(find.text('Starting in 2 • Cancel'));
+    await tester.pump(const Duration(seconds: 3));
+    expect(camera.started, isFalse);
+    await tester.tap(find.text('Start recording'));
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 3));
+    expect(camera.started, isFalse);
+    expect(camera.disposed, isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  });
+
+  testWidgets('back warns before leaving an unsaved take', (tester) async {
+    await tester.pumpWidget(const CueApp());
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.tap(find.text('Finish take'));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Discard this take?'), findsOneWidget);
+    await tester.tap(find.text('Keep take'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save to gallery'), findsOneWidget);
+  });
+
+  for (final landscape in [false, true]) {
+    testWidgets(
+      'fullscreen recording status stays outside the ${landscape ? 'landscape' : 'portrait'} preview',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = landscape
+            ? const Size(800, 400)
+            : const Size(400, 800);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(const CueApp());
+        if (landscape) {
+          await tester.ensureVisible(find.text('Landscape'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Landscape'));
+          await tester.pump();
+          expect(
+            tester
+                .widget<ChoiceChip>(
+                  find.widgetWithText(ChoiceChip, 'Landscape'),
+                )
+                .selected,
+            isTrue,
+          );
+        }
+        await tester.ensureVisible(find.text('Enable camera'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Enable camera'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Fullscreen preview'));
+        await tester.pump();
+        await tester.tap(find.text('Start recording'));
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pump();
+
+        final previewScroll = find.ancestor(
+          of: find.text('READ ALONG'),
+          matching: find.byType(SingleChildScrollView),
+        );
+        final status = find.textContaining('REC ');
+        expect(status, findsOneWidget);
+        expect(previewScroll, findsOneWidget);
+        expect(
+          tester.getRect(status).top,
+          greaterThanOrEqualTo(tester.getRect(previewScroll).bottom),
+        );
+        expect(
+          tester.getRect(status).bottom,
+          lessThanOrEqualTo(tester.view.physicalSize.height),
+        );
+        await tester.tap(find.byTooltip('Fullscreen settings'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Reading speed'), findsOneWidget);
+        await tester.tap(find.byTooltip('Increase text size'));
+        await tester.pump();
+        expect(find.text('26px'), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(find.text('Finish take'));
+        await tester.pumpAndSettle();
+        expect(status, findsNothing);
+      },
+    );
+  }
+
+  testWidgets('saves a take once and allows a retake', (tester) async {
+    final save = Completer<void>();
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('gal'), (call) async {
+          calls.add(call);
+          if (call.method == 'requestAccess') return true;
+          if (call.method == 'putVideo') await save.future;
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('gal'), null);
+    });
+
+    await tester.pumpWidget(const CueApp());
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.tap(find.text('Finish take'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save to gallery'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Save to gallery'),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(calls.map((call) => call.method), ['requestAccess', 'putVideo']);
+    expect(calls.last.arguments['path'], 'test-recording.mp4');
+    save.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Saved to gallery'), findsOneWidget);
+    expect(find.text('Video saved to your gallery or Photos.'), findsOneWidget);
+    await tester.tap(find.text('Retake'));
+    await tester.pumpAndSettle();
+    expect(find.text('Start recording'), findsOneWidget);
+  });
+
+  testWidgets('shows save errors and lets the user retry', (tester) async {
+    var denied = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('gal'), (call) async {
+          if (call.method == 'requestAccess') return true;
+          if (call.method == 'putVideo' && denied) {
+            throw PlatformException(code: 'ACCESS_DENIED');
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('gal'), null);
+    });
+
+    await tester.pumpWidget(const CueApp());
+    await tester.tap(find.text('Enable camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.tap(find.text('Finish take'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save to gallery'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Gallery access was denied'), findsOneWidget);
+    expect(find.text('Save to gallery'), findsOneWidget);
+    denied = false;
+    await tester.tap(find.text('Save to gallery'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved to gallery'), findsOneWidget);
   });
 
   testWidgets('surfaces camera permission errors', (tester) async {
@@ -200,6 +400,7 @@ void main() {
     await tester.tap(find.text('Enable camera'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start recording'));
+    await tester.pump(const Duration(seconds: 3));
     await tester.pump();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pumpAndSettle();

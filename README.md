@@ -24,16 +24,25 @@ devices; simulator camera support varies.
 ## Recording
 
 Enable the camera and microphone, edit or paste a script, select portrait or
-landscape capture, and start recording. The prompt scrolls over the live preview
-only; it is not burned into the recording. Pause or resume the prompt without
-pausing video, finish the take, preview it, and use **Share video** to export it
+landscape capture, and start recording. A three-second countdown can be
+cancelled before recording begins. Use **Practice without recording** to
+rehearse the scrolling script, even without enabling the camera. The script is
+saved locally as you edit it. Use Studio settings, including the settings button
+in fullscreen, to adjust speed, text size, prompt position, and preview mirror.
+The prompt scrolls over the live preview only; it is not burned into the
+recording. Pause or resume the prompt without
+pausing video, finish the take, and preview it. Use **Save to gallery** to save
+a copy to Android Gallery or iOS Photos, or **Share video** to export it
 through the native share sheet. Mirror changes the preview only.
 
-Finished takes are temporary files, are not uploaded, and are not automatically
-placed in Photos or Gallery. Share the take before closing the app or starting a
-retake to keep a copy. The share target determines whether and where it saves
-the video. Backgrounding releases the camera and finishes an active take;
-enable the camera again after returning.
+Finished takes are temporary until saved or shared, are not uploaded, and are
+not automatically placed in Photos or Gallery. Save the take before closing
+the app or starting a retake to keep a copy. Saving may request gallery access.
+The share target determines whether and where it saves a shared video.
+Backgrounding releases the camera and finishes an active take; enable the camera
+again after returning.
+The app warns before a retake or system back navigation discards an unsaved
+take; operating system termination or force-closing cannot be intercepted.
 
 ## Optional Firebase
 

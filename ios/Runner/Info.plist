@@ -12,6 +12,8 @@
 	<string>Cue uses your camera to preview and record your video.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cue uses your microphone to record audio with your video.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Cue saves your recorded videos to your photo library when you choose to save them.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
