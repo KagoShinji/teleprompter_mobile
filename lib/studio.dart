@@ -1345,43 +1345,52 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       ),
       body: bodyContent,
       bottomNavigationBar: SafeArea(
-        child: currentTab == 0
-            ? Container(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Color(0xffe8e9e5))),
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: MediaQuery.of(context).textScaler.clamp(
+                  minScaleFactor: 0.85,
+                  maxScaleFactor: 1.1,
                 ),
-                child: _actionButtons(),
-              )
-            : NavigationBar(
-                selectedIndex: currentTab,
-                onDestinationSelected: (index) {
-                  setState(() => currentTab = index);
-                },
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.videocam_outlined),
-                    selectedIcon: Icon(Icons.videocam),
-                    label: 'Teleprompter',
+          ),
+          child: currentTab == 0
+              ? Container(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xffe8e9e5))),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.closed_caption_outlined),
-                    selectedIcon: Icon(Icons.closed_caption),
-                    label: 'Captions',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.grid_view_outlined),
-                    selectedIcon: Icon(Icons.grid_view),
-                    label: 'Feature Hub',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.auto_awesome_outlined),
-                    selectedIcon: Icon(Icons.auto_awesome),
-                    label: 'Soon',
-                  ),
-                ],
-              ),
+                  child: _actionButtons(),
+                )
+              : NavigationBar(
+                  height: 62,
+                  selectedIndex: currentTab,
+                  onDestinationSelected: (index) {
+                    setState(() => currentTab = index);
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.videocam_outlined),
+                      selectedIcon: Icon(Icons.videocam),
+                      label: 'Studio',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.closed_caption_outlined),
+                      selectedIcon: Icon(Icons.closed_caption),
+                      label: 'Captions',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.grid_view_outlined),
+                      selectedIcon: Icon(Icons.grid_view),
+                      label: 'Hub',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.auto_awesome_outlined),
+                      selectedIcon: Icon(Icons.auto_awesome),
+                      label: 'Soon',
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
