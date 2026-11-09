@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
+import 'features/captions/speech_transcriber.dart';
 import 'firebase_support.dart';
 import 'subtitles.dart';
 
@@ -61,6 +62,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   int currentTab = 2;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
+  SpeechTranscriber? transcriber;
   int elapsed = 0;
   int? countdown;
   double fontSize = 24;
@@ -202,6 +204,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     ticker?.cancel();
     countdownTimer?.cancel();
+    transcriber?.cancel();
     script.removeListener(_scriptChanged);
     script.dispose();
     promptScroll.dispose();
@@ -376,6 +379,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       await activeCamera.startVideoRecording();
       if (!mounted) return;
       recordingStart = DateTime.now();
+      transcriber = SpeechTranscriber();
+      unawaited(transcriber!.start(recordingStart!));
       if (promptScroll.hasClients) promptScroll.jumpTo(0);
       setState(() {
         elapsed = 0;
@@ -400,13 +405,22 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     ticker?.cancel();
     try {
       final captured = await activeCamera.stopVideoRecording();
+      final spoken = await transcriber?.stop() ?? <SubtitleWord>[];
+      transcriber = null;
       take = captured;
       takeSaved = false;
       saveError = null;
       recording = false;
       final totalDuration = elapsed > 0 ? elapsed.toDouble() : 10.0;
-      subtitleWords = generateSubtitlesFromScript(script.text, totalDuration);
-      _notify('Take ready. Save it to your gallery before closing the app.');
+      if (spoken.isNotEmpty) {
+        subtitleWords = spoken;
+        _notify('Take ready. Save it to your gallery before closing the app.');
+      } else {
+        subtitleWords = generateSubtitlesFromScript(script.text, totalDuration);
+        _notify(
+          'Take ready, but no speech was recognized, so captions follow the script timing. Check microphone and speech recognition permissions.',
+        );
+      }
       final nextPlayer = VideoPlayerController.file(File(take!.path));
       player = nextPlayer;
       try {
@@ -418,6 +432,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       }
     } on CameraException catch (error) {
       recording = false;
+      transcriber?.cancel();
+      transcriber = null;
       _notify(
         'Recording could not be completed: ${error.description ?? error.code}',
       );
@@ -899,22 +915,15 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       widthFactor: 1,
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              Color(0xf50e110f),
-                              Color(0xeb0e110f),
-                              Color(0xf50e110f),
+                              Color(0xf00e110f),
+                              Color(0xd80e110f),
+                              Color(0xb00e110f),
                             ],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          border: const Border.symmetric(
-                            horizontal: BorderSide(
-                              color: Color(0x33ffffff),
-                              width: 1,
-                            ),
                           ),
                         ),
                         child: Column(
@@ -1222,8 +1231,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 2,
+                ),
                 child: Row(
                   children: [
                     if (recording) _recordingStatus(),
@@ -1279,8 +1290,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
               ),
               if (message != null)
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 2,
+                  ),
                   child: Text(
                     message!,
                     style: const TextStyle(color: Colors.white, fontSize: 12),
@@ -1405,10 +1418,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       bottomNavigationBar: SafeArea(
         child: MediaQuery(
           data: MediaQuery.of(context).copyWith(
-            textScaler: MediaQuery.of(context).textScaler.clamp(
-                  minScaleFactor: 0.85,
-                  maxScaleFactor: 1.1,
-                ),
+            textScaler: MediaQuery.of(context).textScaler
+                .clamp(minScaleFactor: 0.85, maxScaleFactor: 1.1),
           ),
           child: currentTab == 0
               ? Container(
@@ -1508,8 +1519,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'Teleprompter Studio',
-          description:
-              'Record video with scrolling script, camera preview, mirror mode & custom speeds.',
+          description: 'Record video with scrolling script, camera preview, mirror mode & custom speeds.',
           icon: Icons.camera_front,
           badgeText: 'Active',
           badgeColor: const Color(0xffd8eedc),
@@ -1519,8 +1529,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'Auto Captions & Subtitles',
-          description:
-              'Interactive bouncy animated subtitles synced to voice, with drag positioning & text editing.',
+          description: 'Interactive bouncy animated subtitles synced to voice, with drag positioning & text editing.',
           icon: Icons.closed_caption,
           badgeText: 'Active',
           badgeColor: const Color(0xffd8eedc),
@@ -1540,8 +1549,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'AI Script Writer',
-          description:
-              'Generate engaging video scripts from topic ideas using AI prompts.',
+          description: 'Generate engaging video scripts from topic ideas using AI prompts.',
           icon: Icons.auto_awesome,
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
@@ -1551,8 +1559,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'AI Background & Lighting',
-          description:
-              'Real-time background blur, lighting enhancement, and color grading.',
+          description: 'Real-time background blur, lighting enhancement, and color grading.',
           icon: Icons.color_lens_outlined,
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
@@ -1562,8 +1569,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'Voice Noise Cleaner',
-          description:
-              'Remove ambient background noise and enhance speech audio clarity.',
+          description: 'Remove ambient background noise and enhance speech audio clarity.',
           icon: Icons.graphic_eq,
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
@@ -1816,8 +1822,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 16),
         _featureSelectionCard(
           title: 'AI Script Generator',
-          description:
-              'Type a topic or outline and let AI generate structured, ready-to-read teleprompter scripts.',
+          description: 'Type a topic or outline and let AI generate structured, ready-to-read teleprompter scripts.',
           icon: Icons.auto_awesome,
           badgeText: 'In Progress',
           badgeColor: const Color(0xfffff4ce),
@@ -1827,8 +1832,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'Teleprompter Remote Control',
-          description:
-              'Control reading speed, play, pause, and script scrolling using a secondary phone or bluetooth remote.',
+          description: 'Control reading speed, play, pause, and script scrolling using a secondary phone or bluetooth remote.',
           icon: Icons.settings_remote,
           badgeText: 'Planned',
           badgeColor: const Color(0xffeaeaea),
@@ -1838,8 +1842,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         const SizedBox(height: 10),
         _featureSelectionCard(
           title: 'Auto Clip Trimmer',
-          description:
-              'Automatically trim silent pauses at the beginning and end of your video recordings.',
+          description: 'Automatically trim silent pauses at the beginning and end of your video recordings.',
           icon: Icons.content_cut,
           badgeText: 'Planned',
           badgeColor: const Color(0xffeaeaea),
@@ -1889,10 +1892,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       SizedBox(height: 2),
                       Text(
                         'Your script, your pace, your best take.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
                       ),
                     ],
                   ),
@@ -2110,10 +2110,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 else
                   Text(
                     '${formatTime(elapsed)}${take != null ? '  •  Take ready' : ''}',
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
                   ),
               ],
             ),
@@ -2167,10 +2164,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 const Text(
                   'A little reminder',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 const SizedBox(height: 2),
                 const Text(
