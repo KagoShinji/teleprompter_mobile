@@ -56,6 +56,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool settingsVisible = true;
   bool allowExit = false;
   bool showSubtitles = true;
+  bool showFullscreenControls = true;
+  bool fullscreenTrayExpanded = true;
   int currentTab = 2;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
@@ -236,7 +238,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       );
       next = CameraController(
         selected,
-        ResolutionPreset.high,
+        ResolutionPreset.max,
         enableAudio: true,
       );
       await next.initialize();
@@ -633,79 +635,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (activePlayer != null && activePlayer.value.isInitialized)
-            ValueListenableBuilder<VideoPlayerValue>(
-              valueListenable: activePlayer,
-              builder: (context, value, _) {
-                final isPlaying = value.isPlaying;
-                return OutlinedButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          if (isPlaying) {
-                            await activePlayer.pause();
-                          } else {
-                            if (value.position >= value.duration) {
-                              await activePlayer.seekTo(Duration.zero);
-                            }
-                            await activePlayer.play();
-                          }
-                        },
-                  icon: Icon(
-                    isPlaying ? Icons.pause_circle : Icons.play_circle,
-                  ),
-                  label: Text(
-                    isPlaying ? 'Pause recording' : 'Play recording',
-                  ),
-                );
-              },
-            ),
-          if (activePlayer != null && activePlayer.value.isInitialized)
-            const SizedBox(height: 8),
-          if (subtitleWords != null && subtitleWords!.isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        setState(() => showSubtitles = !showSubtitles),
-                    icon: Icon(
-                      showSubtitles
-                          ? Icons.closed_caption
-                          : Icons.closed_caption_off,
-                    ),
-                    label: Text(
-                      showSubtitles ? 'Hide subtitles' : 'Show subtitles',
-                    ),
-                  ),
-                ),
-                if (showSubtitles) ...[
-                  const SizedBox(width: 8),
-                  PopupMenuButton<SubtitlePresetStyle>(
-                    tooltip: 'Subtitle style',
-                    icon: const Icon(Icons.palette_outlined),
-                    onSelected: (style) =>
-                        setState(() => subtitleStyle = style),
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: SubtitlePresetStyle.bouncyYellow,
-                        child: Text('Bouncy Yellow'),
-                      ),
-                      PopupMenuItem(
-                        value: SubtitlePresetStyle.neonCyan,
-                        child: Text('Neon Cyan'),
-                      ),
-                      PopupMenuItem(
-                        value: SubtitlePresetStyle.minimalDark,
-                        child: Text('Minimal White'),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
           if (takeSaved)
             Semantics(
               liveRegion: true,
@@ -754,37 +683,100 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
             ),
           if (saveError != null)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 6),
               child: Semantics(
                 liveRegion: true,
                 child: Text(
                   saveError!,
                   style: TextStyle(
                     color: fullscreen ? Colors.white : const Color(0xff98514b),
+                    fontSize: 12,
                   ),
                 ),
               ),
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             children: [
+              if (activePlayer != null && activePlayer.value.isInitialized)
+                Expanded(
+                  child: ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: activePlayer,
+                    builder: (context, value, _) {
+                      final isPlaying = value.isPlaying;
+                      return OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                        ),
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                if (isPlaying) {
+                                  await activePlayer.pause();
+                                } else {
+                                  if (value.position >= value.duration) {
+                                    await activePlayer.seekTo(Duration.zero);
+                                  }
+                                  await activePlayer.play();
+                                }
+                              },
+                        icon: Icon(
+                          isPlaying
+                              ? Icons.pause_circle_outline
+                              : Icons.play_circle_outline,
+                          size: 16,
+                        ),
+                        label: Text(
+                          isPlaying ? 'Pause' : 'Play recording',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              if (activePlayer != null && activePlayer.value.isInitialized)
+                const SizedBox(width: 6),
               Expanded(
                 child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
                   onPressed: busy ? null : _retake,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('Retake'),
+                  icon: const Icon(Icons.replay, size: 16),
+                  label: const Text('Retake', overflow: TextOverflow.ellipsis),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: Builder(
                   builder: (context) => OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
                     onPressed: busy ? null : () => _share(context),
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share video'),
+                    icon: const Icon(Icons.share, size: 16),
+                    label: const Text(
+                      'Share video',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
               ),
+              if (subtitleWords != null && subtitleWords!.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: showSubtitles ? 'Hide subtitles' : 'Show subtitles',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      setState(() => showSubtitles = !showSubtitles),
+                  icon: Icon(
+                    showSubtitles
+                        ? Icons.closed_caption
+                        : Icons.closed_caption_off,
+                    color: fullscreen ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -907,15 +899,22 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       widthFactor: 1,
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              Color(0xe80e110f),
-                              Color(0xc20e110f),
-                              Color(0x000e110f),
+                              Color(0xf50e110f),
+                              Color(0xeb0e110f),
+                              Color(0xf50e110f),
                             ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: const Border.symmetric(
+                            horizontal: BorderSide(
+                              color: Color(0x33ffffff),
+                              width: 1,
+                            ),
                           ),
                         ),
                         child: Column(
@@ -1215,45 +1214,104 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           child: Column(
             children: [
               Expanded(
-                child: Center(child: SingleChildScrollView(child: _preview())),
+                child: Center(
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: _preview(),
+                  ),
+                ),
               ),
-              Row(
-                children: [
-                  const SizedBox(width: 12),
-                  if (recording) _recordingStatus(),
-                  if (practicing)
-                    const Text(
-                      'Practice',
-                      style: TextStyle(color: Colors.white),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                child: Row(
+                  children: [
+                    if (recording) _recordingStatus(),
+                    if (practicing)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xff1b281e),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Text(
+                          'Practice',
+                          style: TextStyle(
+                            color: Color(0xff9ed5a9),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: fullscreenTrayExpanded
+                          ? 'Collapse controls tray'
+                          : 'Expand controls tray',
+                      color: Colors.white,
+                      onPressed: () => setState(
+                        () => fullscreenTrayExpanded = !fullscreenTrayExpanded,
+                      ),
+                      icon: Icon(
+                        fullscreenTrayExpanded
+                            ? Icons.keyboard_arrow_down
+                            : Icons.keyboard_arrow_up,
+                      ),
                     ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Fullscreen settings',
-                    color: Colors.white,
-                    onPressed: countdown == null
-                        ? _showFullscreenSettings
-                        : null,
-                    icon: const Icon(Icons.tune),
-                  ),
-                  IconButton(
-                    tooltip: 'Exit fullscreen preview',
-                    color: Colors.white,
-                    onPressed: () => setState(() => fullscreen = false),
-                    icon: const Icon(Icons.fullscreen_exit),
-                  ),
-                ],
+                    IconButton(
+                      tooltip: 'Fullscreen settings',
+                      color: Colors.white,
+                      onPressed: countdown == null
+                          ? _showFullscreenSettings
+                          : null,
+                      icon: const Icon(Icons.tune),
+                    ),
+                    IconButton(
+                      tooltip: 'Exit fullscreen preview',
+                      color: Colors.white,
+                      onPressed: () => setState(() => fullscreen = false),
+                      icon: const Icon(Icons.fullscreen_exit),
+                    ),
+                  ],
+                ),
               ),
               if (message != null)
                 Padding(
-                  padding: const EdgeInsets.all(8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   child: Text(
                     message!,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: _actionButtons(),
+              AnimatedCrossFade(
+                firstChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      outlinedButtonTheme: OutlinedButtonThemeData(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white38),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      filledButtonTheme: FilledButtonThemeData(
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                    child: _actionButtons(),
+                  ),
+                ),
+                secondChild: const SizedBox.shrink(),
+                crossFadeState: fullscreenTrayExpanded
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+                duration: const Duration(milliseconds: 250),
               ),
             ],
           ),
