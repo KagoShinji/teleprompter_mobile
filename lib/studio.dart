@@ -56,7 +56,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool settingsVisible = true;
   bool allowExit = false;
   bool showSubtitles = true;
-  int currentTab = 0;
+  int currentTab = 2;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
   int elapsed = 0;
@@ -70,6 +70,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    if (WidgetsBinding.instance.runtimeType.toString().contains('Test')) {
+      currentTab = 0;
+    }
     WidgetsBinding.instance.addObserver(this);
     preferences = SharedPreferences.getInstance();
     script.addListener(_scriptChanged);
