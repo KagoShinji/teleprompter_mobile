@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "cue_mobile (debug)",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": [
+        "--dart-define-from-file=.env"
+      ]
+    },
+    {
+      "name": "cue_mobile (profile)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define-from-file=.env"
+      ]
+    }
+  ]
+}

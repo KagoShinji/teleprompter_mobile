@@ -46,3 +46,9 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local environment secrets (never commit API keys)
+.env
+.env.*
+!.env.example
+

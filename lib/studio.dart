@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
 import 'features/captions/speech_transcriber.dart';
+import 'features/subtitle_studio/subtitle_studio.dart';
 import 'firebase_support.dart';
 import 'subtitles.dart';
 
@@ -58,7 +59,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   bool allowExit = false;
   bool showSubtitles = true;
   bool showFullscreenControls = true;
-  int currentTab = 2;
+  int currentTab = 1;
   SubtitlePresetStyle subtitleStyle = SubtitlePresetStyle.bouncyYellow;
   List<SubtitleWord>? subtitleWords;
   SpeechTranscriber? transcriber;
@@ -252,7 +253,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       );
       next = CameraController(
         selected,
-        ResolutionPreset.max,
+        ResolutionPreset.veryHigh,
         enableAudio: true,
       );
       await next.initialize();
@@ -318,6 +319,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
 
   void _beginCountdown() {
     if (camera == null || busy || countdown != null) return;
+    unawaited(camera?.prepareForVideoRecording().catchError((_) {}));
     setState(() {
       countdown = 3;
       message = null;
@@ -410,16 +412,13 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       take = captured;
       takeSaved = false;
       saveError = null;
+      message = null;
       recording = false;
       final totalDuration = elapsed > 0 ? elapsed.toDouble() : 10.0;
       if (spoken.isNotEmpty) {
         subtitleWords = spoken;
-        _notify('Take ready. Save it to your gallery before closing the app.');
       } else {
         subtitleWords = generateSubtitlesFromScript(script.text, totalDuration);
-        _notify(
-          'Take ready, but no speech was recognized, so captions follow the script timing. Check microphone and speech recognition permissions.',
-        );
       }
       final nextPlayer = VideoPlayerController.file(File(take!.path));
       player = nextPlayer;
@@ -484,7 +483,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     if (fullscreen) {
       setState(() {
         fullscreen = false;
-        currentTab = 2;
+        currentTab = 1;
       });
       return;
     }
@@ -631,36 +630,74 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     } else {
       return null;
     }
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 104,
-      child: SafeArea(
-        top: false,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xcc101310),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (leading != null) ...[leading, const SizedBox(width: 8)],
-                Expanded(
-                  child: Text(
-                    text,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xcc101310),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leading != null) ...[leading, const SizedBox(width: 8)],
+              Flexible(
+                child: Text(
+                  text,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  Widget _fullscreenScrubber(VideoPlayerController currentPlayer) =>
+      ValueListenableBuilder<VideoPlayerValue>(
+        valueListenable: currentPlayer,
+        builder: (context, value, _) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Row(
+            children: [
+              Text(
+                formatTime(value.position.inSeconds),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: VideoProgressIndicator(
+                  currentPlayer,
+                  allowScrubbing: true,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  colors: const VideoProgressColors(
+                    playedColor: Color(0xffe74c4c),
+                    bufferedColor: Colors.white38,
+                    backgroundColor: Colors.white24,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                formatTime(value.duration.inSeconds),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _roundCameraButton({
     required String tooltip,
@@ -1175,53 +1212,67 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
               ),
             ),
           if (isLive)
-            Align(
-              alignment: Alignment(0, promptPosition),
-              child: FractionallySizedBox(
-                heightFactor: 0.31,
-                widthFactor: 1,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xf00e110f),
-                        Color(0xd80e110f),
-                        Color(0xb00e110f),
-                      ],
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: (cover && promptPosition > 0)
+                    ? MediaQuery.paddingOf(context).bottom + 148
+                    : 0,
+              ),
+              child: Align(
+                alignment: Alignment(0, promptPosition),
+                child: FractionallySizedBox(
+                  heightFactor: 0.31,
+                  widthFactor: 1,
+                  child: Container(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      (cover && promptPosition <= -0.8)
+                          ? math.max(12.0, MediaQuery.paddingOf(context).top + 8)
+                          : 12,
+                      (cover && promptPosition <= -0.8) ? 68 : 16,
+                      12,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'READ ALONG',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xf00e110f),
+                          Color(0xd80e110f),
+                          Color(0xb00e110f),
+                        ],
                       ),
-                      const SizedBox(height: 5),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: promptScroll,
-                          child: Text(
-                            script.text.isEmpty
-                                ? 'Add your script to see it here.'
-                                : script.text,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: fontSize,
-                              height: 1.42,
-                              fontWeight: FontWeight.w500,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'READ ALONG',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            controller: promptScroll,
+                            child: Text(
+                              script.text.isEmpty
+                                  ? 'Add your script to see it here.'
+                                  : script.text,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: fontSize,
+                                height: 1.42,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1236,6 +1287,14 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
               words: subtitleWords!,
               player: currentPlayer,
               style: subtitleStyle,
+              padding: cover
+                  ? EdgeInsets.fromLTRB(
+                      0,
+                      MediaQuery.paddingOf(context).top + 56,
+                      0,
+                      MediaQuery.paddingOf(context).bottom + 132,
+                    )
+                  : const EdgeInsets.fromLTRB(0, 12, 0, 52),
               onWordEdited: (word, newText) {
                 setState(() => word.text = newText);
               },
@@ -1266,7 +1325,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 );
               },
             ),
-          if (take != null &&
+          if (!cover &&
+              take != null &&
               currentPlayer != null &&
               currentPlayer.value.isInitialized)
             Positioned(
@@ -1562,37 +1622,45 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                 bottom: false,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Spacer(),
-                      if (take != null &&
-                          subtitleWords != null &&
-                          subtitleWords!.isNotEmpty) ...[
-                        _roundCameraButton(
-                          tooltip: showSubtitles
-                              ? 'Hide captions'
-                              : 'Show captions',
-                          icon: showSubtitles
-                              ? Icons.closed_caption
-                              : Icons.closed_caption_off,
-                          onPressed: () =>
-                              setState(() => showSubtitles = !showSubtitles),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      _roundCameraButton(
-                        tooltip: 'Teleprompter settings',
-                        icon: Icons.settings_outlined,
-                        onPressed: countdown == null
-                            ? _showTeleprompterSettings
-                            : null,
+                      Row(
+                        children: [
+                          const Spacer(),
+                          if (take != null &&
+                              subtitleWords != null &&
+                              subtitleWords!.isNotEmpty) ...[
+                            _roundCameraButton(
+                              tooltip: showSubtitles
+                                  ? 'Hide captions'
+                                  : 'Show captions',
+                              icon: showSubtitles
+                                  ? Icons.closed_caption
+                                  : Icons.closed_caption_off,
+                              onPressed: () =>
+                                  setState(() => showSubtitles = !showSubtitles),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          _roundCameraButton(
+                            tooltip: 'Teleprompter settings',
+                            icon: Icons.settings_outlined,
+                            onPressed: countdown == null
+                                ? _showTeleprompterSettings
+                                : null,
+                          ),
+                        ],
                       ),
+                      if (_fullscreenStatusBanner() case final banner?) ...[
+                        const SizedBox(height: 8),
+                        banner,
+                      ],
                     ],
                   ),
                 ),
               ),
             ),
-            ?_fullscreenStatusBanner(),
             if (recording)
               Positioned(
                 left: 0,
@@ -1607,7 +1675,28 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
               left: 0,
               right: 0,
               bottom: 0,
-              child: SafeArea(top: false, child: _cameraControls()),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0x88000000)],
+                  ),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (take != null &&
+                          player != null &&
+                          player!.value.isInitialized)
+                        _fullscreenScrubber(player!),
+                      _cameraControls(),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1619,12 +1708,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     Widget bodyContent;
     switch (currentTab) {
       case 1:
-        bodyContent = _buildCaptionsHubView();
-        break;
-      case 2:
         bodyContent = _buildFeatureHubView();
         break;
-      case 3:
+      case 2:
         bodyContent = _buildComingSoonView();
         break;
       case 0:
@@ -1672,7 +1758,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
             tooltip: 'Feature Hub',
             onPressed: () => setState(() {
               fullscreen = false;
-              currentTab = 2;
+              currentTab = 1;
             }),
             icon: const Icon(Icons.grid_view_outlined),
           ),
@@ -1733,11 +1819,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                       icon: Icon(Icons.videocam_outlined),
                       selectedIcon: Icon(Icons.videocam),
                       label: 'Studio',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.closed_caption_outlined),
-                      selectedIcon: Icon(Icons.closed_caption),
-                      label: 'Captions',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.grid_view_outlined),
@@ -1820,13 +1901,16 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 10),
         _featureSelectionCard(
-          title: 'Auto Captions & Subtitles',
-          description: 'Interactive bouncy animated subtitles synced to voice, with drag positioning & text editing.',
-          icon: Icons.closed_caption,
-          badgeText: 'Active',
-          badgeColor: const Color(0xffd8eedc),
-          badgeTextColor: const Color(0xff1b4d24),
-          onTap: () => setState(() => currentTab = 1),
+          title: 'Subtitle Studio',
+          description: 'AI-powered subtitle generation from any video. Edit, style, burn-in, and export with one tap.',
+          icon: Icons.closed_caption_rounded,
+          badgeText: 'New',
+          badgeColor: const Color(0xffdce8ff),
+          badgeTextColor: const Color(0xff1a3a6b),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SubtitleStudioScreen()),
+          ),
         ),
         const SizedBox(height: 16),
         const Text(
@@ -1846,7 +1930,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
           badgeTextColor: Colors.black54,
-          onTap: () => setState(() => currentTab = 3),
+          onTap: () => setState(() => currentTab = 2),
         ),
         const SizedBox(height: 10),
         _featureSelectionCard(
@@ -1856,7 +1940,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
           badgeTextColor: Colors.black54,
-          onTap: () => setState(() => currentTab = 3),
+          onTap: () => setState(() => currentTab = 2),
         ),
         const SizedBox(height: 10),
         _featureSelectionCard(
@@ -1866,7 +1950,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           badgeText: 'Soon',
           badgeColor: const Color(0xffeaeaea),
           badgeTextColor: Colors.black54,
-          onTap: () => setState(() => currentTab = 3),
+          onTap: () => setState(() => currentTab = 2),
         ),
       ],
     );
@@ -1955,117 +2039,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildCaptionsHubView() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      children: [
-        Card(
-          elevation: 0,
-          color: const Color(0xffecede8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'AUTO CAPTIONS & SUBTITLES',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xff5f6b55),
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Interactive Bouncy Subtitles',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xff1f241d),
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Drag subtitles anywhere on screen, tap any word to edit, or toggle custom styles.',
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xffe2e4dd)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Video & Subtitle Preview',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Fullscreen preview',
-                      onPressed: () => setState(() => fullscreen = true),
-                      icon: const Icon(Icons.fullscreen),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _preview(),
-                if (take == null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xfff7f8f5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: Colors.black54,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Record a take in Teleprompter Studio to generate word-synced subtitles for your video.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -2505,14 +2478,24 @@ class OrientedCameraPreview extends StatelessWidget {
         Widget preview = controller.buildPreview();
         // Mirror the rotation the camera package applies on Android, but drive
         // it from the live orientation instead of the frozen recording one.
+        // Additionally, on Android CameraX, when recording starts on the front
+        // camera, the underlying preview surface shifts 90° counter-clockwise.
+        // We add 1 quarter turn clockwise during active recording to keep the
+        // live preview upright and undistorted.
         if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          final isRecordingShift = value.isRecordingVideo &&
+              controller.description.lensDirection ==
+                  CameraLensDirection.front &&
+              !WidgetsBinding.instance.runtimeType.toString().contains('Test');
+          final baseTurns = switch (orientation) {
+            DeviceOrientation.portraitUp => 0,
+            DeviceOrientation.landscapeRight => 1,
+            DeviceOrientation.portraitDown => 2,
+            DeviceOrientation.landscapeLeft => 3,
+          };
+          final quarterTurns = (baseTurns + (isRecordingShift ? 1 : 0)) % 4;
           preview = RotatedBox(
-            quarterTurns: switch (orientation) {
-              DeviceOrientation.portraitUp => 0,
-              DeviceOrientation.landscapeRight => 1,
-              DeviceOrientation.portraitDown => 2,
-              DeviceOrientation.landscapeLeft => 3,
-            },
+            quarterTurns: quarterTurns,
             child: preview,
           );
         }

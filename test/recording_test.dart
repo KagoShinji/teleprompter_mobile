@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:camera_platform_interface/camera_platform_interface.dart';
+import 'package:cue_mobile/features/captions/widgets/interactive_subtitle_overlay.dart';
 import 'package:cue_mobile/main.dart';
 import 'package:cue_mobile/studio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 class FakeCamera extends CameraPlatform {
@@ -582,4 +584,49 @@ void main() {
     expect(find.text('Share video'), findsOneWidget);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
+
+  for (final size in [const Size(400, 800), const Size(800, 400)]) {
+    testWidgets(
+      'fullscreen review places scrubber and captions cleanly without middle banner (${size.width}x${size.height})',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(const CueApp());
+        await tester.tap(find.text('Enable camera'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byTooltip('Fullscreen preview'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Fullscreen preview'));
+        await tester.pump();
+        await tester.tap(find.byTooltip('Start recording'));
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pump();
+        await tester.tap(find.byTooltip('Stop recording'));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Take ready'), findsNothing);
+        expect(find.byTooltip('Play video'), findsNothing);
+        expect(find.byType(VideoProgressIndicator), findsOneWidget);
+
+        final scrubberRect = tester.getRect(
+          find.byType(VideoProgressIndicator),
+        );
+        final saveButtonRect = tester.getRect(find.byTooltip('Save to gallery'));
+        expect(scrubberRect.bottom, lessThanOrEqualTo(saveButtonRect.top));
+
+        final captionArea = find.descendant(
+          of: find.byType(InteractiveSubtitleOverlay),
+          matching: find.byType(LayoutBuilder),
+        );
+        expect(captionArea, findsOneWidget);
+        expect(
+          tester.getRect(captionArea).bottom,
+          lessThanOrEqualTo(scrubberRect.top),
+        );
+      },
+    );
+  }
 }

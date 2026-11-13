@@ -10,6 +10,8 @@ class SubtitleWord {
 
 enum SubtitlePresetStyle { bouncyYellow, neonCyan, minimalDark }
 
+enum SubtitleFontStyle { modern, impact, serif, mono, italic }
+
 List<SubtitleWord> generateSubtitlesFromScript(
   String scriptText,
   double totalDurationSeconds,

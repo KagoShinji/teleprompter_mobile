@@ -1,13 +1,41 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun loadDotEnvValueB64(key: String): String {
+    val envFile = rootProject.file("../.env")
+    if (!envFile.exists()) return ""
+    for (line in envFile.readLines()) {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) continue
+        val eqIdx = trimmed.indexOf('=')
+        if (eqIdx <= 0) continue
+        if (trimmed.substring(0, eqIdx).trim() == key) {
+            var raw = trimmed.substring(eqIdx + 1).trim()
+            if (raw.length >= 2 &&
+                ((raw.startsWith("\"") && raw.endsWith("\"")) ||
+                    (raw.startsWith("'") && raw.endsWith("'")))
+            ) {
+                raw = raw.substring(1, raw.length - 1)
+            }
+            return Base64.getEncoder().encodeToString(raw.toByteArray(Charsets.UTF_8))
+        }
+    }
+    return ""
+}
+
 android {
     namespace = "com.example.cue_mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    buildFeatures {
+        resValues = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -27,10 +55,15 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        resValue("string", "dev_gemini_api_key_b64", "")
     }
 
     buildTypes {
+        getByName("debug") {
+            resValue("string", "dev_gemini_api_key_b64", loadDotEnvValueB64("GEMINI_API_KEY"))
+        }
         release {
+            resValue("string", "dev_gemini_api_key_b64", "")
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
